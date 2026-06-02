@@ -313,6 +313,14 @@ tr:hover td { background: var(--bg-secondary); }
 }
 .admin-match-row:last-child { border-bottom: none; }
 
+body {
+  background-image: url('watermark.png');
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-attachment: fixed;
+  background-size: 340px 340px;
+}
+
 @media (max-width: 600px) {
   .admin-grid { grid-template-columns: 1fr; }
   .form-row { grid-template-columns: 1fr; }
