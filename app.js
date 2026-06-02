@@ -85,11 +85,41 @@ function renderLogin() {
   if (current) sel.value = current;
 }
 
+function pinNext(el, nextIdx) {
+  if (el.value.length === 1 && nextIdx !== null) {
+    document.getElementById("pin-" + nextIdx).focus();
+  }
+}
+function pinBack(e, el, prevIdx) {
+  if (e.key === "Backspace" && el.value === "" && prevIdx !== null) {
+    document.getElementById("pin-" + prevIdx).focus();
+  }
+}
+function getPin() {
+  return [0,1,2,3].map(i => document.getElementById("pin-"+i).value).join("");
+}
+function clearPin() {
+  [0,1,2,3].forEach(i => { document.getElementById("pin-"+i).value = ""; });
+  document.getElementById("pin-0").focus();
+}
+
 function doLogin() {
   const id = document.getElementById('login-select').value;
-  if (!id) return;
+  if (!id) { alert('Selecciona tu nombre'); return; }
   const user = state.users.find(u => u.id === id);
   if (!user) return;
+
+  const pin = getPin();
+  if (pin.length < 4) { alert('Ingresa tu PIN de 4 digitos'); return; }
+  if (user.pin && user.pin !== pin) {
+    document.getElementById('pin-error').classList.remove('hidden');
+    [0,1,2,3].forEach(i => document.getElementById('pin-'+i).classList.add('error'));
+    clearPin();
+    return;
+  }
+  document.getElementById('pin-error').classList.add('hidden');
+  [0,1,2,3].forEach(i => document.getElementById('pin-'+i).classList.remove('error'));
+
   state.currentUser = user;
   state.editingAs = user;
   document.getElementById('screen-login').classList.add('hidden');
@@ -119,6 +149,7 @@ function doLogin() {
 function doLogout() {
   state.currentUser = null;
   state.editingAs = null;
+  clearPin();
   document.getElementById('screen-login').classList.remove('hidden');
   document.getElementById('screen-main').classList.add('hidden');
   document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === 0));
@@ -440,6 +471,7 @@ function renderAdminUsers() {
         </div>
       </td>
       <td>${u.isAdmin ? '<span class="badge badge-warning">admin</span>' : '<span class="badge badge-gray">jugador</span>'}</td>
+      <td style="font-family:monospace;letter-spacing:2px">${u.pin || '—'}</td>
       <td>
         <button class="btn btn-sm" onclick="editPicksFor('${u.id}')">
           <i class="ti ti-edit"></i> Editar
@@ -456,10 +488,13 @@ function renderAdminUsers() {
 
 async function addUser() {
   const name = document.getElementById('new-user-name').value.trim();
-  if (!name) return;
+  const pin  = document.getElementById('new-user-pin').value.trim();
+  if (!name) { alert('Escribe el nombre del jugador'); return; }
+  if (pin.length !== 4 || isNaN(pin)) { alert('El PIN debe ser de 4 digitos numericos'); return; }
   const isAdmin = document.getElementById('new-user-admin').checked;
-  state.users.push({ id: 'u' + Date.now(), name, isAdmin });
+  state.users.push({ id: 'u' + Date.now(), name, pin, isAdmin });
   document.getElementById('new-user-name').value = '';
+  document.getElementById('new-user-pin').value  = '';
   document.getElementById('new-user-admin').checked = false;
   await saveState();
 }
