@@ -392,3 +392,12 @@ body::before {
   justify-content: space-between;
   margin-bottom: 1.25rem;
 }
+
+/* FILTER BUTTONS */
+.filter-btn { color: var(--text-secondary); }
+.filter-btn.active {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 500;
+}

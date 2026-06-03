@@ -17,7 +17,7 @@
   <div id="screen-login">
     <div class="login-hero">
       <div class="trophy-icon">🏆</div>
-      <h1>Pitaya Mundialista</h1>
+      <h1>Pitaya Mundialista 2026</h1>
       <p>Selecciona tu nombre e ingresa tu PIN</p>
     </div>
     <div class="login-card">
@@ -49,7 +49,7 @@
     <header class="app-header">
       <div class="header-left">
         <span class="header-logo">🏆</span>
-        <span class="header-title">Pitaya Mundialista</span>
+        <span class="header-title">Pitaya Mundialista 2026</span>
       </div>
       <div class="header-right">
         <div id="user-avatar" class="avatar"></div>
@@ -73,6 +73,9 @@
       </button>
       <button class="tab" onclick="showTab('tab-stats',this)">
         <i class="ti ti-chart-bar"></i> Estadísticas
+      </button>
+      <button class="tab" onclick="showTab('tab-comparar',this)">
+        <i class="ti ti-eye"></i> Comparar
       </button>
       <button class="tab hidden" id="tab-admin-btn" onclick="showTab('tab-admin',this)">
         <i class="ti ti-settings"></i> Admin
@@ -132,6 +135,21 @@
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- COMPARAR TAB -->
+    <div id="tab-comparar" class="tab-content hidden">
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div class="section-title" style="margin:0"><i class="ti ti-eye"></i> Quinielas por partido</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
+            <button class="btn btn-sm filter-btn active" onclick="filterComparar('all',this)">Todos</button>
+            <button class="btn btn-sm filter-btn" onclick="filterComparar('pending',this)">Por jugar</button>
+            <button class="btn btn-sm filter-btn" onclick="filterComparar('done',this)">Finalizados</button>
+          </div>
+        </div>
+      </div>
+      <div id="comparar-list"></div>
     </div>
 
     <!-- ADMIN TAB -->

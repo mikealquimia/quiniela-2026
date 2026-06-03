@@ -168,6 +168,7 @@ function refreshAll() {
   renderMatches();
   renderTabla();
   renderStats();
+  renderComparar(_compararFilter);
   renderAdminMatches();
   renderAdminUsers();
   document.getElementById('pts-result').value = state.points.result;
@@ -175,13 +176,15 @@ function refreshAll() {
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
+let _compararFilter = 'all';
 function showTab(id, btn) {
-  ['tab-quiniela','tab-tabla','tab-stats','tab-admin'].forEach(t => {
+  ['tab-quiniela','tab-tabla','tab-stats','tab-comparar','tab-admin'].forEach(t => {
     document.getElementById(t).classList.add('hidden');
   });
   document.getElementById(id).classList.remove('hidden');
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   if (btn) btn.classList.add('active');
+  if (id === 'tab-comparar') renderComparar(_compararFilter);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -702,6 +705,92 @@ async function syncResults() {
   }
 }
 
+
+
+// ─── Render: Comparar ────────────────────────────────────────────────────────
+function filterComparar(filter, btn) {
+  _compararFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderComparar(filter);
+}
+
+function renderComparar(filter = 'all') {
+  const container = document.getElementById('comparar-list');
+  if (!container) return;
+
+  let matches = [...state.matches].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
+
+  if (filter === 'pending') matches = matches.filter(m => !m.result || m.result.home === '');
+  if (filter === 'done')    matches = matches.filter(m => m.result && m.result.home !== '');
+
+  if (matches.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-secondary)">No hay partidos en esta categoría.</div>';
+    return;
+  }
+
+  const phases = [...new Set(matches.map(m => m.phase))];
+  let html = '';
+
+  phases.forEach(phase => {
+    const ms = matches.filter(m => m.phase === phase);
+    html += `<div class="phase-group"><div class="card"><div class="phase-header">${phase}</div>`;
+
+    ms.forEach(m => {
+      const hasResult = m.result && m.result.home !== '';
+      const locked = isLocked(m);
+      const dt = new Date(m.datetime);
+      const dtStr = dt.toLocaleDateString('es', { weekday: 'short', month: 'short', day: 'numeric' })
+        + ' ' + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+
+      // Match header
+      html += `<div style="padding:12px 0;border-bottom:0.5px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+          <span style="font-weight:600;font-size:14px">${m.home}</span>
+          <span style="color:var(--text-secondary);font-size:12px">vs</span>
+          <span style="font-weight:600;font-size:14px">${m.away}</span>
+          <span style="flex:1"></span>
+          <span style="font-size:11px;color:var(--text-secondary)">${dtStr}</span>
+          ${hasResult
+            ? `<span class="badge badge-success">Resultado: ${m.result.home}–${m.result.away}</span>`
+            : locked
+            ? `<span class="badge badge-warning"><i class="ti ti-lock"></i> En curso / bloqueado</span>`
+            : `<span class="badge badge-gray">Por jugar</span>`}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">`;
+
+      // Each user's pick
+      state.users.forEach(u => {
+        const pick = state.picks[u.id]?.[m.id];
+        const hasPick = pick && pick.home !== '' && pick.away !== '';
+        const color = colorFor(u.name);
+        let badgeCls = 'badge-gray';
+        let pts = 0;
+        if (hasResult && hasPick) {
+          pts = calcPoints(u.id, m);
+          if (pts === state.points.exact) badgeCls = 'badge-success';
+          else if (pts === state.points.result) badgeCls = 'badge-info';
+          else badgeCls = 'badge-danger';
+        }
+
+        html += `<div style="display:flex;align-items:center;gap:6px;background:var(--bg-secondary);border-radius:var(--radius);padding:5px 10px">
+          <div class="avatar" style="width:22px;height:22px;font-size:9px;background:${color}30;color:${color};flex-shrink:0">${initials(u.name)}</div>
+          <span style="font-size:12px;font-weight:500">${u.name.split(' ')[0]}</span>
+          <span class="badge ${badgeCls}" style="font-size:11px">
+            ${hasPick ? pick.home + '–' + pick.away : '–'}
+            ${hasResult && hasPick ? ' · +' + pts : ''}
+          </span>
+        </div>`;
+      });
+
+      html += `</div></div>`;
+    });
+
+    html += '</div></div>';
+  });
+
+  container.innerHTML = html;
+}
 
 // ─── Borrar todos los partidos ───────────────────────────────────────────────
 function openDeleteAllModal() {
