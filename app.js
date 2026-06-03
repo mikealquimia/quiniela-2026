@@ -10,6 +10,12 @@ const FIREBASE_CONFIG = {
   appId: "1:100399049705:web:5169f2dfcd4d5995023978"
 };
 
+
+// ─── API-Football config ─────────────────────────────────────────────────────
+// Registrate gratis en https://dashboard.api-football.com/register
+// y pega tu API key aqui:
+const API_FOOTBALL_KEY = "9999ebd705992251ae7de01915a6deac"; // <-- pega tu key aqui
+
 // ─── State ──────────────────────────────────────────────────────────────────
 let db;
 let state = {
@@ -423,9 +429,12 @@ function renderAdminMatches() {
       <input type="number" min="0" max="20" placeholder="V" value="${hasResult ? m.result.away : ''}"
         id="res-a-${m.id}" class="score-input">
       <button class="btn btn-sm btn-primary" onclick="saveResult('${m.id}')">
-        <i class="ti ti-check"></i>
+        <i class="ti ti-check"></i> Guardar
       </button>
-      <button class="btn btn-sm btn-danger" onclick="deleteMatch('${m.id}')">
+      <button class="btn btn-sm" onclick="openEditModal('${m.id}')" title="Editar partido">
+        <i class="ti ti-edit"></i>
+      </button>
+      <button class="btn btn-sm btn-danger" onclick="openDeleteModal('${m.id}')" title="Eliminar">
         <i class="ti ti-trash"></i>
       </button>
     </div>`;
@@ -441,10 +450,58 @@ async function saveResult(matchId) {
   await saveState();
 }
 
-async function deleteMatch(matchId) {
-  if (!confirm('¿Eliminar este partido?')) return;
-  state.matches = state.matches.filter(m => m.id !== matchId);
+let _deleteMatchId = null;
+function openDeleteModal(matchId) {
+  const m = state.matches.find(x => x.id === matchId);
+  if (!m) return;
+  _deleteMatchId = matchId;
+  document.getElementById('delete-confirm-text').textContent =
+    '¿Eliminar ' + m.home + ' vs ' + m.away + '? Esta acción no se puede deshacer.';
+  document.getElementById('modal-delete-overlay').classList.remove('hidden');
+}
+function closeDeleteModal() {
+  _deleteMatchId = null;
+  document.getElementById('modal-delete-overlay').classList.add('hidden');
+}
+async function confirmDelete() {
+  if (!_deleteMatchId) return;
+  state.matches = state.matches.filter(m => m.id !== _deleteMatchId);
+  closeDeleteModal();
   await saveState();
+  renderAdminMatches();
+  renderMatches();
+}
+
+// Keep old deleteMatch as alias for backwards compat
+async function deleteMatch(matchId) { openDeleteModal(matchId); }
+
+let _editMatchId = null;
+function openEditModal(matchId) {
+  const m = state.matches.find(x => x.id === matchId);
+  if (!m) return;
+  _editMatchId = matchId;
+  document.getElementById('edit-home').value  = m.home;
+  document.getElementById('edit-away').value  = m.away;
+  document.getElementById('edit-date').value  = m.datetime;
+  document.getElementById('edit-phase').value = m.phase;
+  document.getElementById('modal-overlay').classList.remove('hidden');
+}
+function closeModal() {
+  _editMatchId = null;
+  document.getElementById('modal-overlay').classList.add('hidden');
+}
+async function saveEdit() {
+  if (!_editMatchId) return;
+  const m = state.matches.find(x => x.id === _editMatchId);
+  if (!m) return;
+  m.home     = document.getElementById('edit-home').value.trim()  || m.home;
+  m.away     = document.getElementById('edit-away').value.trim()  || m.away;
+  m.datetime = document.getElementById('edit-date').value         || m.datetime;
+  m.phase    = document.getElementById('edit-phase').value        || m.phase;
+  closeModal();
+  await saveState();
+  renderAdminMatches();
+  renderMatches();
 }
 
 async function addMatch() {
@@ -529,6 +586,204 @@ function resetEditAs(e) {
   document.getElementById('quiniela-info').innerHTML =
     '<i class="ti ti-info-circle"></i> Puedes editar tu quiniela hasta 1 hora antes de cada partido.';
   renderMatches();
+}
+
+
+// ─── Importar partidos desde openfootball (sin API key) ──────────────────────
+async function importFixtures() {
+  const btn = document.getElementById('btn-import');
+  btn.textContent = 'Importando...';
+  btn.disabled = true;
+  try {
+    const res = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
+    if (!res.ok) throw new Error('No se pudo conectar');
+    const data = await res.json();
+
+    let added = 0;
+    const existingKeys = new Set(state.matches.map(m => m.home + '|' + m.away));
+
+    // openfootball 2026 format: data.matches[] with round, date, time, team1, team2, group, score
+    const matches = data.matches || [];
+    matches.forEach(m => {
+      const home = m.team1;
+      const away = m.team2;
+      if (!home || !away) return;
+      if (existingKeys.has(home + '|' + away)) return;
+
+      // Parse datetime - time comes as "13:00 UTC-6", convert to local ISO
+      const timeStr = (m.time || '12:00').split(' ')[0];
+      const datetime = m.date + 'T' + timeStr + ':00';
+
+      // Phase from round
+      const round = (m.round || 'Fase de grupos').toLowerCase();
+      let phase = 'Fase de grupos';
+      if (round.includes('final') && round.includes('cuarto')) phase = 'Cuartos de final';
+      else if (round.includes('octavo') || round.includes('round of 16')) phase = 'Octavos de final';
+      else if (round.includes('semifinal') || round.includes('semi')) phase = 'Semifinal';
+      else if (round.includes('third') || round.includes('tercer')) phase = 'Tercer lugar';
+      else if (round.includes('final')) phase = 'Final';
+      else if (m.group) phase = 'Fase de grupos - ' + m.group;
+
+      // Score if available
+      let result = { home: '', away: '' };
+      if (m.score && m.score.ft) {
+        result = { home: String(m.score.ft[0]), away: String(m.score.ft[1]) };
+      }
+
+      state.matches.push({
+        id: 'm' + Date.now() + Math.random().toString(36).slice(2,6),
+        home, away, datetime, phase, result
+      });
+      existingKeys.add(home + '|' + away);
+      added++;
+    });
+
+    await saveState();
+    btn.textContent = '✓ Importados ' + added + ' partidos';
+    renderAdminMatches();
+    renderMatches();
+    setTimeout(() => { btn.textContent = 'Importar partidos del Mundial'; btn.disabled = false; }, 3000);
+  } catch(e) {
+    btn.textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+    console.error(e);
+  }
+}
+
+// ─── Actualizar resultados desde API-Football ────────────────────────────────
+async function syncResults() {
+  if (!API_FOOTBALL_KEY) {
+    alert('Agrega tu API key de API-Football en app.js primero.\nRegistrate gratis en: https://dashboard.api-football.com/register');
+    return;
+  }
+  const btn = document.getElementById('btn-sync');
+  btn.textContent = 'Actualizando...';
+  btn.disabled = true;
+  try {
+    const res = await fetch('https://v3.football.api-sports.io/fixtures?league=1&season=2026&status=FT', {
+      headers: {
+        'x-rapidapi-key': API_FOOTBALL_KEY,
+        'x-rapidapi-host': 'v3.football.api-sports.io'
+      }
+    });
+    const data = await res.json();
+    if (!data.response) throw new Error('Respuesta inválida de API-Football');
+
+    let updated = 0;
+    data.response.forEach(fixture => {
+      const home = fixture.teams.home.name;
+      const away = fixture.teams.away.name;
+      const scoreHome = String(fixture.goals.home ?? '');
+      const scoreAway = String(fixture.goals.away ?? '');
+      if (scoreHome === '' || scoreAway === '') return;
+
+      // Match by team names (fuzzy - find closest)
+      const match = state.matches.find(m =>
+        m.home.toLowerCase().includes(home.toLowerCase().slice(0,5)) ||
+        home.toLowerCase().includes(m.home.toLowerCase().slice(0,5))
+      );
+      if (match && (match.result.home !== scoreHome || match.result.away !== scoreAway)) {
+        match.result = { home: scoreHome, away: scoreAway };
+        updated++;
+      }
+    });
+
+    await saveState();
+    btn.textContent = '✓ ' + updated + ' resultados actualizados';
+    renderAdminMatches();
+    renderTabla();
+    renderStats();
+    renderMatches();
+    setTimeout(() => { btn.textContent = 'Actualizar resultados'; btn.disabled = false; }, 3000);
+  } catch(e) {
+    btn.textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+    console.error(e);
+  }
+}
+
+
+// ─── Borrar todos los partidos ───────────────────────────────────────────────
+function openDeleteAllModal() {
+  document.getElementById('modal-deleteall-overlay').classList.remove('hidden');
+}
+function closeDeleteAllModal() {
+  document.getElementById('modal-deleteall-overlay').classList.add('hidden');
+}
+async function confirmDeleteAll() {
+  state.matches = [];
+  state.picks   = {};
+  closeDeleteAllModal();
+  await saveState();
+  renderAdminMatches();
+  renderMatches();
+  renderTabla();
+  renderStats();
+}
+
+// ─── Cambiar PIN ─────────────────────────────────────────────────────────────
+function cpNext(prefix, el, nextIdx) {
+  if (el.value.length === 1 && nextIdx !== null)
+    document.getElementById('cp-' + prefix + '-' + nextIdx).focus();
+}
+function cpBack(prefix, e, el, prevIdx) {
+  if (e.key === 'Backspace' && el.value === '' && prevIdx !== null)
+    document.getElementById('cp-' + prefix + '-' + prevIdx).focus();
+}
+function getCpPin(prefix) {
+  return [0,1,2,3].map(i => document.getElementById('cp-' + prefix + '-' + i).value).join('');
+}
+function clearCpPin(prefix) {
+  [0,1,2,3].forEach(i => { document.getElementById('cp-' + prefix + '-' + i).value = ''; });
+}
+
+function openChangePinModal() {
+  ['cur','new','cfm'].forEach(p => clearCpPin(p));
+  document.getElementById('cp-error').classList.add('hidden');
+  document.getElementById('cp-success').classList.add('hidden');
+  ['cur','new','cfm'].forEach(p =>
+    [0,1,2,3].forEach(i => document.getElementById('cp-'+p+'-'+i).classList.remove('error'))
+  );
+  document.getElementById('modal-changepin-overlay').classList.remove('hidden');
+  document.getElementById('cp-cur-0').focus();
+}
+function closeChangePinModal() {
+  document.getElementById('modal-changepin-overlay').classList.add('hidden');
+}
+async function saveNewPin() {
+  const errEl = document.getElementById('cp-error');
+  const sucEl = document.getElementById('cp-success');
+  errEl.classList.add('hidden');
+  sucEl.classList.add('hidden');
+
+  const cur = getCpPin('cur');
+  const nw  = getCpPin('new');
+  const cfm = getCpPin('cfm');
+
+  const user = state.users.find(u => u.id === state.currentUser.id);
+
+  if (cur.length < 4) { errEl.textContent = 'Ingresa tu PIN actual completo'; errEl.classList.remove('hidden'); return; }
+  if (user.pin && user.pin !== cur) {
+    errEl.textContent = 'PIN actual incorrecto';
+    errEl.classList.remove('hidden');
+    clearCpPin('cur');
+    document.getElementById('cp-cur-0').focus();
+    return;
+  }
+  if (nw.length < 4) { errEl.textContent = 'El nuevo PIN debe tener 4 dígitos'; errEl.classList.remove('hidden'); return; }
+  if (nw !== cfm) {
+    errEl.textContent = 'Los PINs nuevos no coinciden';
+    errEl.classList.remove('hidden');
+    clearCpPin('new'); clearCpPin('cfm');
+    document.getElementById('cp-new-0').focus();
+    return;
+  }
+
+  user.pin = nw;
+  state.currentUser = user;
+  await saveState();
+  sucEl.classList.remove('hidden');
+  setTimeout(() => closeChangePinModal(), 1500);
 }
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
