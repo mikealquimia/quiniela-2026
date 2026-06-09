@@ -191,7 +191,19 @@ function showTab(id, btn) {
 
 // ─── Pick value helpers (0 is a valid score!) ────────────────────────────────
 function hasVal(v) { return v !== '' && v !== null && v !== undefined; }
-function pickSet(pick) { return pick && hasVal(pick.home) && hasVal(pick.away); }
+// A pick is "set" if at least one side has a value — the other defaults to 0
+function pickSet(pick) {
+  if (!pick) return false;
+  return hasVal(pick.home) || hasVal(pick.away);
+}
+// Normalize pick: if one side is empty, treat it as 0
+function normPick(pick) {
+  if (!pick) return { home: 0, away: 0 };
+  return {
+    home: hasVal(pick.home) ? pick.home : 0,
+    away: hasVal(pick.away) ? pick.away : 0
+  };
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function isLocked(match) {
@@ -202,8 +214,9 @@ function calcPoints(userId, match) {
   if (!match.result || match.result.home === '') return 0;
   const pick = state.picks[userId]?.[match.id];
   if (!pickSet(pick)) return 0;
+  const np = normPick(pick);
   const rh = parseInt(match.result.home), ra = parseInt(match.result.away);
-  const ph = parseInt(pick.home),         pa = parseInt(pick.away);
+  const ph = parseInt(np.home), pa = parseInt(np.away);
   if (ph === rh && pa === ra) return state.points.exact;
   const rRes = rh > ra ? 'H' : rh < ra ? 'A' : 'D';
   const pRes = ph > pa ? 'H' : ph < pa ? 'A' : 'D';
@@ -478,7 +491,7 @@ function renderStats() {
     state.users.forEach(u => {
       const pick = state.picks[u.id]?.[m.id];
       const pts = calcPoints(u.id, m);
-      const pickStr = pickSet(pick) ? `${pick.home}–${pick.away}` : '–';
+      const np2 = normPick(pick); const pickStr = pickSet(pick) ? `${np2.home}–${np2.away}` : '–';
       const cls = pts === state.points.exact ? 'badge-success'
                 : pts === state.points.result ? 'badge-info' : 'badge-gray';
       html += `<td style="text-align:center"><span class="badge ${cls}">${pickStr}</span></td>`;
@@ -869,7 +882,7 @@ function renderComparar(filter = 'all') {
           else if (pts === state.points.result) badgeCls = 'badge-info';
           else badgeCls = 'badge-danger';
         }
-        const pickStr = hasPick ? pick.home + '–' + pick.away : '–';
+        const np3 = normPick(pick); const pickStr = hasPick ? np3.home + '–' + np3.away : '–';
         const ptsStr  = hasResult && hasPick ? ' · +' + pts : '';
         picksHtml += '<div style="display:flex;align-items:center;gap:6px;background:var(--bg-secondary);border-radius:var(--radius);padding:5px 10px">'
           + '<div class="avatar" style="width:22px;height:22px;font-size:9px;background:' + color + '30;color:' + color + ';flex-shrink:0">' + initials(u.name) + '</div>'
