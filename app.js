@@ -188,6 +188,11 @@ function showTab(id, btn) {
   if (id === 'tab-comparar') renderComparar(_compararFilter);
 }
 
+
+// ─── Pick value helpers (0 is a valid score!) ────────────────────────────────
+function hasVal(v) { return v !== '' && v !== null && v !== undefined; }
+function pickSet(pick) { return pick && hasVal(pick.home) && hasVal(pick.away); }
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function isLocked(match) {
   return Date.now() >= new Date(match.datetime).getTime() - 60 * 60 * 1000;
@@ -196,7 +201,7 @@ function isLocked(match) {
 function calcPoints(userId, match) {
   if (!match.result || match.result.home === '') return 0;
   const pick = state.picks[userId]?.[match.id];
-  if (!pick || pick.home === '' || pick.away === '') return 0;
+  if (!pickSet(pick)) return 0;
   const rh = parseInt(match.result.home), ra = parseInt(match.result.away);
   const ph = parseInt(pick.home),         pa = parseInt(pick.away);
   if (ph === rh && pa === ra) return state.points.exact;
@@ -346,7 +351,7 @@ function renderMatches() {
           statusBadge = `<span class="badge badge-success">+${pts} exacto ✓</span>`;
         else if (pts === state.points.result)
           statusBadge = `<span class="badge badge-info">+${pts} resultado</span>`;
-        else if (pick.home !== '' || pick.away !== '')
+        else if (pickSet(pick))
           statusBadge = `<span class="badge badge-gray">+0</span>`;
       }
 
@@ -356,7 +361,7 @@ function renderMatches() {
 
       const inputsOrPick = locked || resultKnown
         ? `<span style="font-size:14px;font-weight:600;min-width:64px;text-align:center;color:var(--text-secondary)">
-             ${pick.home !== '' ? pick.home + ' – ' + pick.away : '– –'}
+             ${pickSet(pick) ? pick.home + ' – ' + pick.away : '– –'}
            </span>`
         : `<input type="number" min="0" max="20" class="score-input" value="${pick.home}"
              placeholder="0" onchange="setPick('${editUser.id}','${m.id}','home',this.value)">
@@ -473,7 +478,7 @@ function renderStats() {
     state.users.forEach(u => {
       const pick = state.picks[u.id]?.[m.id];
       const pts = calcPoints(u.id, m);
-      const pickStr = pick && pick.home !== '' ? `${pick.home}–${pick.away}` : '–';
+      const pickStr = pickSet(pick) ? `${pick.home}–${pick.away}` : '–';
       const cls = pts === state.points.exact ? 'badge-success'
                 : pts === state.points.result ? 'badge-info' : 'badge-gray';
       html += `<td style="text-align:center"><span class="badge ${cls}">${pickStr}</span></td>`;
@@ -854,7 +859,7 @@ function renderComparar(filter = 'all') {
       let picksHtml = '';
       state.users.forEach(u => {
         const pick = state.picks[u.id]?.[m.id];
-        const hasPick = pick && pick.home !== '' && pick.away !== '';
+        const hasPick = pickSet(pick);
         const color = colorFor(u.name);
         let badgeCls = 'badge-gray';
         let pts = 0;
