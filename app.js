@@ -736,30 +736,16 @@ function renderComparar(filter = 'all') {
     const ms = matches.filter(m => m.phase === phase);
     html += `<div class="phase-group"><div class="card"><div class="phase-header">${phase}</div>`;
 
-    ms.forEach(m => {
+    ms.forEach((m, idx) => {
       const hasResult = m.result && m.result.home !== '';
       const locked = isLocked(m);
       const dt = new Date(m.datetime);
       const dtStr = dt.toLocaleDateString('es', { weekday: 'short', month: 'short', day: 'numeric' })
         + ' ' + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+      const isLast = idx === ms.length - 1;
 
-      // Match header
-      html += `<div style="padding:12px 0;border-bottom:0.5px solid var(--border)">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
-          <span style="font-weight:600;font-size:14px">${m.home}</span>
-          <span style="color:var(--text-secondary);font-size:12px">vs</span>
-          <span style="font-weight:600;font-size:14px">${m.away}</span>
-          <span style="flex:1"></span>
-          <span style="font-size:11px;color:var(--text-secondary)">${dtStr}</span>
-          ${hasResult
-            ? `<span class="badge badge-success">Resultado: ${m.result.home}–${m.result.away}</span>`
-            : locked
-            ? `<span class="badge badge-warning"><i class="ti ti-lock"></i> En curso / bloqueado</span>`
-            : `<span class="badge badge-gray">Por jugar</span>`}
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px">`;
-
-      // Each user's pick
+      // Build user picks HTML separately to avoid template nesting issues
+      let picksHtml = '';
       state.users.forEach(u => {
         const pick = state.picks[u.id]?.[m.id];
         const hasPick = pick && pick.home !== '' && pick.away !== '';
@@ -772,18 +758,34 @@ function renderComparar(filter = 'all') {
           else if (pts === state.points.result) badgeCls = 'badge-info';
           else badgeCls = 'badge-danger';
         }
-
-        html += `<div style="display:flex;align-items:center;gap:6px;background:var(--bg-secondary);border-radius:var(--radius);padding:5px 10px">
-          <div class="avatar" style="width:22px;height:22px;font-size:9px;background:${color}30;color:${color};flex-shrink:0">${initials(u.name)}</div>
-          <span style="font-size:12px;font-weight:500">${u.name.split(' ')[0]}</span>
-          <span class="badge ${badgeCls}" style="font-size:11px">
-            ${hasPick ? pick.home + '–' + pick.away : '–'}
-            ${hasResult && hasPick ? ' · +' + pts : ''}
-          </span>
-        </div>`;
+        const pickStr = hasPick ? pick.home + '–' + pick.away : '–';
+        const ptsStr  = hasResult && hasPick ? ' · +' + pts : '';
+        picksHtml += '<div style="display:flex;align-items:center;gap:6px;background:var(--bg-secondary);border-radius:var(--radius);padding:5px 10px">'
+          + '<div class="avatar" style="width:22px;height:22px;font-size:9px;background:' + color + '30;color:' + color + ';flex-shrink:0">' + initials(u.name) + '</div>'
+          + '<span style="font-size:12px;font-weight:500">' + u.name.split(' ')[0] + '</span>'
+          + '<span class="badge ' + badgeCls + '" style="font-size:11px">' + pickStr + ptsStr + '</span>'
+          + '</div>';
       });
 
-      html += `</div></div>`;
+      const statusBadge = hasResult
+        ? '<span class="badge badge-success">Resultado: ' + m.result.home + '–' + m.result.away + '</span>'
+        : locked
+        ? '<span class="badge badge-warning"><i class="ti ti-lock"></i> En curso</span>'
+        : '<span class="badge badge-gray">Por jugar</span>';
+
+      html += '<div style="padding:12px 0;' + (isLast ? '' : 'border-bottom:0.5px solid var(--border)') + '">'
+        + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">'
+        + '<span style="font-weight:600;font-size:14px">' + m.home + '</span>'
+        + '<span style="color:var(--text-secondary);font-size:12px">vs</span>'
+        + '<span style="font-weight:600;font-size:14px">' + m.away + '</span>'
+        + '<span style="flex:1"></span>'
+        + '<span style="font-size:11px;color:var(--text-secondary)">' + dtStr + '</span>'
+        + statusBadge
+        + '</div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:8px">'
+        + picksHtml
+        + '</div>'
+        + '</div>';
     });
 
     html += '</div></div>';
