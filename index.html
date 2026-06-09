@@ -84,9 +84,26 @@
 
     <!-- QUINIELA TAB -->
     <div id="tab-quiniela" class="tab-content">
+      <!-- Mini stats del usuario -->
+      <div id="my-stats-grid" class="stat-grid" style="margin-bottom:1rem"></div>
+
       <div id="quiniela-info" class="alert alert-info">
         <i class="ti ti-info-circle"></i> Puedes editar tu quiniela hasta 1 hora antes de cada partido.
       </div>
+
+      <!-- Filtro por fecha -->
+      <div class="card" style="margin-bottom:1rem;padding:10px 14px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:13px;color:var(--text-secondary);white-space:nowrap"><i class="ti ti-calendar-search"></i> Filtrar por fecha:</span>
+          <select id="date-filter" onchange="renderMatches()" style="flex:1;min-width:160px;max-width:260px">
+            <option value="all">Todos los partidos</option>
+          </select>
+          <button class="btn btn-sm" onclick="document.getElementById('date-filter').value='all';renderMatches()">
+            <i class="ti ti-x"></i> Limpiar
+          </button>
+        </div>
+      </div>
+
       <div id="matches-list"></div>
     </div>
 
@@ -239,11 +256,16 @@
       </div>
 
       <div class="card" style="margin-bottom:1rem">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px">
           <div class="section-title" style="margin:0"><i class="ti ti-list-check"></i> Partidos y resultados</div>
-          <button class="btn btn-sm btn-danger" onclick="openDeleteAllModal()">
-            <i class="ti ti-trash"></i> Borrar todos
-          </button>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="admin-date-filter" onchange="renderAdminMatches()" style="font-size:12px;padding:5px 8px">
+              <option value="all">Todas las fechas</option>
+            </select>
+            <button class="btn btn-sm btn-danger" onclick="openDeleteAllModal()">
+              <i class="ti ti-trash"></i> Borrar todos
+            </button>
+          </div>
         </div>
         <div id="admin-matches-list"></div>
       </div>

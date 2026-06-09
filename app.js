@@ -165,6 +165,7 @@ function doLogout() {
 }
 
 function refreshAll() {
+  renderMyStats();
   renderMatches();
   renderTabla();
   renderStats();
@@ -235,11 +236,76 @@ function getStreak(userId) {
   return streak;
 }
 
+
+// ─── Render: My Stats (top of quiniela tab) ──────────────────────────────────
+function renderMyStats() {
+  const grid = document.getElementById('my-stats-grid');
+  if (!grid || !state.currentUser) return;
+  const u = state.currentUser;
+  let pts = 0, exact = 0, result = 0, played = 0, pending = 0;
+  state.matches.forEach(m => {
+    if (m.result && m.result.home !== '') {
+      played++;
+      const p = calcPoints(u.id, m);
+      pts += p;
+      if (p === state.points.exact) exact++;
+      else if (p === state.points.result) result++;
+    } else {
+      pending++;
+    }
+  });
+  const color = colorFor(u.name);
+  grid.innerHTML = `
+    <div class="stat-card" style="border-left:3px solid ${color}">
+      <div class="stat-label">Mis puntos</div>
+      <div class="stat-value" style="color:${color}">${pts}</div>
+    </div>
+    <div class="stat-card" style="border-left:3px solid var(--success-text)">
+      <div class="stat-label">Marcador exacto</div>
+      <div class="stat-value" style="color:var(--success-text)">${exact}</div>
+    </div>
+    <div class="stat-card" style="border-left:3px solid var(--accent)">
+      <div class="stat-label">Resultado acertado</div>
+      <div class="stat-value" style="color:var(--accent)">${result}</div>
+    </div>
+    <div class="stat-card" style="border-left:3px solid var(--text-secondary)">
+      <div class="stat-label">Por jugar</div>
+      <div class="stat-value">${pending}</div>
+    </div>
+  `;
+}
+
+// ─── Date filter helpers ──────────────────────────────────────────────────────
+function populateDateFilter() {
+  const sel = document.getElementById('date-filter');
+  if (!sel) return;
+  const current = sel.value;
+  // Get unique dates
+  const dates = [...new Set(
+    state.matches.map(m => m.datetime ? m.datetime.slice(0,10) : null).filter(Boolean)
+  )].sort();
+  sel.innerHTML = '<option value="all">Todos los partidos</option>';
+  dates.forEach(d => {
+    const dt = new Date(d + 'T12:00:00');
+    const label = dt.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+    const o = document.createElement('option');
+    o.value = d;
+    o.textContent = label.charAt(0).toUpperCase() + label.slice(1);
+    sel.appendChild(o);
+  });
+  if (current) sel.value = current;
+}
+
 // ─── Render: Matches ─────────────────────────────────────────────────────────
 function renderMatches() {
   const container = document.getElementById('matches-list');
   const editUser = state.editingAs;
   if (!editUser) { container.innerHTML = ''; return; }
+
+  renderMyStats();
+  populateDateFilter();
+
+  const dateFilter = document.getElementById('date-filter')?.value || 'all';
 
   if (state.matches.length === 0) {
     container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-secondary)">
@@ -249,11 +315,23 @@ function renderMatches() {
     return;
   }
 
-  const phases = [...new Set(state.matches.map(m => m.phase))];
+  let filteredMatches = [...state.matches];
+  if (dateFilter !== 'all') {
+    filteredMatches = filteredMatches.filter(m => m.datetime && m.datetime.slice(0,10) === dateFilter);
+  }
+
+  if (filteredMatches.length === 0) {
+    container.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--text-secondary);font-size:14px">
+      No hay partidos para esta fecha.
+    </div>`;
+    return;
+  }
+
+  const phases = [...new Set(filteredMatches.map(m => m.phase))];
   let html = '';
 
   phases.forEach(phase => {
-    const ms = state.matches.filter(m => m.phase === phase);
+    const ms = filteredMatches.filter(m => m.phase === phase);
     html += `<div class="phase-group"><div class="card"><div class="phase-header">${phase}</div>`;
 
     ms.forEach(m => {
@@ -415,7 +493,35 @@ function renderAdminMatches() {
     return;
   }
 
-  container.innerHTML = state.matches.map(m => {
+  // Populate admin date filter
+  const adminSel = document.getElementById('admin-date-filter');
+  if (adminSel) {
+    const currentVal = adminSel.value;
+    const dates = [...new Set(
+      state.matches.map(m => m.datetime ? m.datetime.slice(0,10) : null).filter(Boolean)
+    )].sort();
+    adminSel.innerHTML = '<option value="all">Todas las fechas</option>';
+    dates.forEach(d => {
+      const dt = new Date(d + 'T12:00:00');
+      const label = dt.toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' });
+      const o = document.createElement('option');
+      o.value = d; o.textContent = label;
+      adminSel.appendChild(o);
+    });
+    if (currentVal) adminSel.value = currentVal;
+  }
+
+  const adminDateFilter = document.getElementById('admin-date-filter')?.value || 'all';
+  let matches = adminDateFilter === 'all'
+    ? state.matches
+    : state.matches.filter(m => m.datetime && m.datetime.slice(0,10) === adminDateFilter);
+
+  if (matches.length === 0) {
+    container.innerHTML = '<p style="font-size:13px;color:var(--text-secondary)">No hay partidos para esta fecha.</p>';
+    return;
+  }
+
+  container.innerHTML = matches.map(m => {
     const dt = new Date(m.datetime);
     const dtStr = dt.toLocaleDateString('es', { day: 'numeric', month: 'short' })
       + ' ' + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
@@ -807,6 +913,7 @@ async function confirmDeleteAll() {
   closeDeleteAllModal();
   await saveState();
   renderAdminMatches();
+  renderMyStats();
   renderMatches();
   renderTabla();
   renderStats();
