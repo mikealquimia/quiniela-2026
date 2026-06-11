@@ -120,6 +120,7 @@
                 <th>Jugador</th>
                 <th class="text-right">Pts</th>
                 <th class="text-right">Exactos</th>
+                <th class="text-right">Diferencia</th>
                 <th class="text-right">Resultados</th>
                 <th class="text-right">Jugados</th>
               </tr>
@@ -144,7 +145,8 @@
               <tr>
                 <th>Jugador</th>
                 <th class="text-right">% Exactos</th>
-                <th class="text-right">% Resultado</th>
+                <th class="text-right">% Diferencia</th>
+                <th class="text-right">% Acertado</th>
                 <th class="text-right">Racha</th>
               </tr>
             </thead>
@@ -208,12 +210,16 @@
           <div class="section-title"><i class="ti ti-adjustments"></i> Sistema de puntos</div>
           <div class="form-row">
             <div class="form-group">
-              <label>Pts resultado correcto</label>
-              <input type="number" id="pts-result" value="1" min="0">
+              <label>Pts marcador exacto</label>
+              <input type="number" id="pts-exact" value="5" min="0">
             </div>
             <div class="form-group">
-              <label>Pts marcador exacto</label>
-              <input type="number" id="pts-exact" value="3" min="0">
+              <label>Pts diferencia correcta</label>
+              <input type="number" id="pts-diff" value="3" min="0">
+            </div>
+            <div class="form-group">
+              <label>Pts ganador / empate</label>
+              <input type="number" id="pts-result" value="2" min="0">
             </div>
           </div>
           <button class="btn btn-sm" onclick="savePoints()">

@@ -22,7 +22,7 @@ let state = {
   users: [],
   matches: [],
   picks: {},
-  points: { result: 1, exact: 3 },
+  points: { exact: 5, diff: 3, result: 2 },
   currentUser: null,
   editingAs: null
 };
@@ -53,7 +53,9 @@ async function initFirebase() {
       state.users   = d.users   || [];
       state.matches = d.matches || [];
       state.picks   = d.picks   || {};
-      state.points  = d.points  || { result: 1, exact: 3 };
+      state.points  = d.points  || { exact: 5, diff: 3, result: 2 };
+      // Ensure diff tier exists for older saved data
+      if (state.points.diff === undefined) state.points.diff = 3;
       if (state.currentUser) {
         // Refresh current user object in case admin status changed
         state.currentUser = state.users.find(u => u.id === state.currentUser.id) || state.currentUser;
@@ -147,8 +149,9 @@ function doLogin() {
     adminTab.classList.add('hidden');
   }
 
-  document.getElementById('pts-result').value = state.points.result;
   document.getElementById('pts-exact').value   = state.points.exact;
+  document.getElementById('pts-diff').value    = state.points.diff;
+  document.getElementById('pts-result').value = state.points.result;
   refreshAll();
 }
 
@@ -172,8 +175,9 @@ function refreshAll() {
   renderComparar(_compararFilter);
   renderAdminMatches();
   renderAdminUsers();
-  document.getElementById('pts-result').value = state.points.result;
   document.getElementById('pts-exact').value   = state.points.exact;
+  document.getElementById('pts-diff').value    = state.points.diff;
+  document.getElementById('pts-result').value = state.points.result;
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
@@ -217,7 +221,11 @@ function calcPoints(userId, match) {
   const np = normPick(pick);
   const rh = parseInt(match.result.home), ra = parseInt(match.result.away);
   const ph = parseInt(np.home), pa = parseInt(np.away);
+  // Tier 1: exact score
   if (ph === rh && pa === ra) return state.points.exact;
+  // Tier 2: same goal difference (e.g. predict 2-0 and result is 3-1 → diff is +2 both)
+  if ((ph - pa) === (rh - ra)) return state.points.diff;
+  // Tier 3: correct winner or draw
   const rRes = rh > ra ? 'H' : rh < ra ? 'A' : 'D';
   const pRes = ph > pa ? 'H' : ph < pa ? 'A' : 'D';
   return rRes === pRes ? state.points.result : 0;
@@ -225,17 +233,18 @@ function calcPoints(userId, match) {
 
 function getTableData() {
   return state.users.map(u => {
-    let pts = 0, exact = 0, result = 0, played = 0;
+    let pts = 0, exact = 0, diff = 0, result = 0, played = 0;
     state.matches.forEach(m => {
       if (m.result && m.result.home !== '') {
         played++;
         const p = calcPoints(u.id, m);
         pts += p;
         if (p === state.points.exact) exact++;
+        else if (p === state.points.diff) diff++;
         else if (p === state.points.result) result++;
       }
     });
-    return { user: u, pts, exact, result, played };
+    return { user: u, pts, exact, diff, result, played };
   }).sort((a, b) => b.pts - a.pts || b.exact - a.exact);
 }
 
@@ -260,13 +269,14 @@ function renderMyStats() {
   const grid = document.getElementById('my-stats-grid');
   if (!grid || !state.currentUser) return;
   const u = state.currentUser;
-  let pts = 0, exact = 0, result = 0, played = 0, pending = 0;
+  let pts = 0, exact = 0, diff = 0, result = 0, played = 0, pending = 0;
   state.matches.forEach(m => {
     if (m.result && m.result.home !== '') {
       played++;
       const p = calcPoints(u.id, m);
       pts += p;
       if (p === state.points.exact) exact++;
+      else if (p === state.points.diff) diff++;
       else if (p === state.points.result) result++;
     } else {
       pending++;
@@ -283,8 +293,12 @@ function renderMyStats() {
       <div class="stat-value" style="color:var(--success-text)">${exact}</div>
     </div>
     <div class="stat-card" style="border-left:3px solid var(--accent)">
+      <div class="stat-label">Diferencia correcta</div>
+      <div class="stat-value" style="color:var(--accent)">${diff}</div>
+    </div>
+    <div class="stat-card" style="border-left:3px solid var(--info, #3b82f6)">
       <div class="stat-label">Resultado acertado</div>
-      <div class="stat-value" style="color:var(--accent)">${result}</div>
+      <div class="stat-value" style="color:var(--info, #3b82f6)">${result}</div>
     </div>
     <div class="stat-card" style="border-left:3px solid var(--text-secondary)">
       <div class="stat-label">Por jugar</div>
@@ -362,6 +376,8 @@ function renderMatches() {
         const pts = calcPoints(editUser.id, m);
         if (pts === state.points.exact)
           statusBadge = `<span class="badge badge-success">+${pts} exacto ✓</span>`;
+        else if (pts === state.points.diff)
+          statusBadge = `<span class="badge badge-warning">+${pts} diferencia</span>`;
         else if (pts === state.points.result)
           statusBadge = `<span class="badge badge-info">+${pts} resultado</span>`;
         else if (pickSet(pick))
@@ -422,6 +438,8 @@ function renderTabla() {
     <div class="stat-card"><div class="stat-label">Partidos totales</div><div class="stat-value">${state.matches.length}</div></div>
     <div class="stat-card"><div class="stat-label">Participantes</div><div class="stat-value">${state.users.length}</div></div>
     <div class="stat-card"><div class="stat-label">Pts por exacto</div><div class="stat-value">${state.points.exact}</div></div>
+    <div class="stat-card"><div class="stat-label">Pts por diferencia</div><div class="stat-value">${state.points.diff}</div></div>
+    <div class="stat-card"><div class="stat-label">Pts por resultado</div><div class="stat-value">${state.points.result}</div></div>
   `;
 
   const medals = ['🥇', '🥈', '🥉'];
@@ -438,6 +456,7 @@ function renderTabla() {
       </td>
       <td class="text-right"><strong style="font-size:16px">${d.pts}</strong></td>
       <td class="text-right"><span class="badge badge-success">${d.exact}</span></td>
+      <td class="text-right"><span class="badge badge-warning">${d.diff}</span></td>
       <td class="text-right"><span class="badge badge-info">${d.result}</span></td>
       <td class="text-right" style="color:var(--text-secondary)">${d.played}</td>
     </tr>`;
@@ -451,7 +470,8 @@ function renderStats() {
   document.getElementById('stats-body').innerHTML = data.map(d => {
     const total = d.played;
     const pctExact  = total > 0 ? Math.round(d.exact / total * 100) : 0;
-    const pctResult = total > 0 ? Math.round((d.exact + d.result) / total * 100) : 0;
+    const pctDiff   = total > 0 ? Math.round(d.diff  / total * 100) : 0;
+    const pctResult = total > 0 ? Math.round((d.exact + d.diff + d.result) / total * 100) : 0;
     const streak = getStreak(d.user.id);
     const color = colorFor(d.user.name);
     return `<tr>
@@ -462,6 +482,7 @@ function renderStats() {
         </div>
       </td>
       <td class="text-right"><strong>${pctExact}%</strong></td>
+      <td class="text-right">${pctDiff}%</td>
       <td class="text-right">${pctResult}%</td>
       <td class="text-right">
         ${streak > 0
@@ -493,6 +514,7 @@ function renderStats() {
       const pts = calcPoints(u.id, m);
       const np2 = normPick(pick); const pickStr = pickSet(pick) ? `${np2.home}–${np2.away}` : '–';
       const cls = pts === state.points.exact ? 'badge-success'
+                : pts === state.points.diff   ? 'badge-warning'
                 : pts === state.points.result ? 'badge-info' : 'badge-gray';
       html += `<td style="text-align:center"><span class="badge ${cls}">${pickStr}</span></td>`;
     });
@@ -690,8 +712,9 @@ async function deleteUser(userId) {
 }
 
 async function savePoints() {
-  state.points.result = parseInt(document.getElementById('pts-result').value) || 1;
-  state.points.exact  = parseInt(document.getElementById('pts-exact').value)  || 3;
+  state.points.exact  = parseInt(document.getElementById('pts-exact').value)  || 5;
+  state.points.diff   = parseInt(document.getElementById('pts-diff').value)   || 3;
+  state.points.result = parseInt(document.getElementById('pts-result').value) || 2;
   await saveState();
 }
 
@@ -879,6 +902,7 @@ function renderComparar(filter = 'all') {
         if (hasResult && hasPick) {
           pts = calcPoints(u.id, m);
           if (pts === state.points.exact) badgeCls = 'badge-success';
+          else if (pts === state.points.diff) badgeCls = 'badge-warning';
           else if (pts === state.points.result) badgeCls = 'badge-info';
           else badgeCls = 'badge-danger';
         }
