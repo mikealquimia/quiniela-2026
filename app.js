@@ -172,6 +172,7 @@ function refreshAll() {
   renderMatches();
   renderTabla();
   renderStats();
+  populateCompararDateFilter();
   renderComparar(_compararFilter);
   renderAdminMatches();
   renderAdminUsers();
@@ -182,6 +183,7 @@ function refreshAll() {
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 let _compararFilter = 'all';
+
 function showTab(id, btn) {
   ['tab-quiniela','tab-tabla','tab-stats','tab-comparar','tab-admin'].forEach(t => {
     document.getElementById(t).classList.add('hidden');
@@ -189,7 +191,34 @@ function showTab(id, btn) {
   document.getElementById(id).classList.remove('hidden');
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   if (btn) btn.classList.add('active');
-  if (id === 'tab-comparar') renderComparar(_compararFilter);
+  if (id === 'tab-comparar') {
+    populateCompararDateFilter();
+    renderComparar(_compararFilter);
+  }
+}
+
+function populateCompararDateFilter() {
+  const sel = document.getElementById('comparar-date-filter');
+  if (!sel) return;
+  const today = getTodayGuatemala();
+  const dates = [...new Set(
+    state.matches.map(m => m.datetime ? m.datetime.slice(0,10) : null).filter(Boolean)
+  )].sort();
+  const current = sel.value;
+  sel.innerHTML = '<option value="all">Todas las fechas</option>';
+  dates.forEach(d => {
+    const dt = new Date(d + 'T12:00:00');
+    const label = dt.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+    const o = document.createElement('option');
+    o.value = d;
+    o.textContent = (d === today ? '\u{1F4C5} Hoy \u2014 ' : '') + label.charAt(0).toUpperCase() + label.slice(1);
+    sel.appendChild(o);
+  });
+  if (current) {
+    sel.value = current;
+  } else if (dates.includes(today)) {
+    sel.value = today;
+  }
 }
 
 
@@ -308,10 +337,21 @@ function renderMyStats() {
 }
 
 // ─── Date filter helpers ──────────────────────────────────────────────────────
+
+// Retorna la fecha de hoy en zona horaria de Guatemala (UTC-6) como "YYYY-MM-DD"
+function getTodayGuatemala() {
+  const now = new Date();
+  // Guatemala es UTC-6 (sin cambio de horario de verano)
+  const offset = -6 * 60; // minutos
+  const local = new Date(now.getTime() + (offset - now.getTimezoneOffset()) * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
 function populateDateFilter() {
   const sel = document.getElementById('date-filter');
   if (!sel) return;
   const current = sel.value;
+  const today = getTodayGuatemala();
   // Get unique dates
   const dates = [...new Set(
     state.matches.map(m => m.datetime ? m.datetime.slice(0,10) : null).filter(Boolean)
@@ -322,10 +362,15 @@ function populateDateFilter() {
     const label = dt.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
     const o = document.createElement('option');
     o.value = d;
-    o.textContent = label.charAt(0).toUpperCase() + label.slice(1);
+    o.textContent = (d === today ? '📅 Hoy — ' : '') + label.charAt(0).toUpperCase() + label.slice(1);
     sel.appendChild(o);
   });
-  if (current) sel.value = current;
+  // Si no hay valor previo, auto-seleccionar hoy si existe en la lista
+  if (current) {
+    sel.value = current;
+  } else if (dates.includes(today)) {
+    sel.value = today;
+  }
 }
 
 // ─── Render: Matches ─────────────────────────────────────────────────────────
@@ -760,9 +805,23 @@ async function importFixtures() {
       if (!home || !away) return;
       if (existingKeys.has(home + '|' + away)) return;
 
-      // Parse datetime - time comes as "13:00 UTC-6", convert to local ISO
-      const timeStr = (m.time || '12:00').split(' ')[0];
-      const datetime = m.date + 'T' + timeStr + ':00';
+      // Parse datetime - time comes as "13:00 UTC-6", convert to UTC ISO
+      // Ejemplo: "13:00 UTC-6" en fecha "2026-06-11" → UTC = 13:00 + 6h = 19:00Z
+      const timeParts = (m.time || '12:00 UTC-6').split(' ');
+      const timeStr = timeParts[0]; // "13:00"
+      const tzStr   = timeParts[1] || 'UTC-6'; // "UTC-6" o "UTC-4"
+      const tzMatch = tzStr.match(/UTC([+-]\d+)/);
+      const tzOffset = tzMatch ? parseInt(tzMatch[1]) : -6; // negativo = atrás de UTC
+      // Convertir a UTC: restar el offset (UTC-6 → sumar 6h)
+      const localMs  = new Date(m.date + 'T' + timeStr + ':00').getTime();
+      const utcMs    = localMs - tzOffset * 60 * 60 * 1000;
+      const utcDate  = new Date(utcMs);
+      const pad = n => String(n).padStart(2,'0');
+      const datetime = utcDate.getUTCFullYear() + '-'
+        + pad(utcDate.getUTCMonth()+1) + '-'
+        + pad(utcDate.getUTCDate()) + 'T'
+        + pad(utcDate.getUTCHours()) + ':'
+        + pad(utcDate.getUTCMinutes()) + ':00Z';
 
       // Phase from round
       const round = (m.round || 'Fase de grupos').toLowerCase();
@@ -868,6 +927,13 @@ function renderComparar(filter = 'all') {
 
   let matches = [...state.matches].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
 
+  // Filtro por fecha (Comparar)
+  const dateFilterEl = document.getElementById('comparar-date-filter');
+  const dateVal = dateFilterEl ? dateFilterEl.value : 'all';
+  if (dateVal && dateVal !== 'all') {
+    matches = matches.filter(m => m.datetime && m.datetime.slice(0,10) === dateVal);
+  }
+
   if (filter === 'pending') matches = matches.filter(m => !m.result || m.result.home === '');
   if (filter === 'done')    matches = matches.filter(m => m.result && m.result.home !== '');
 
@@ -940,6 +1006,141 @@ function renderComparar(filter = 'all') {
   });
 
   container.innerHTML = html;
+}
+
+// ─── Verificar horarios contra openfootball ──────────────────────────────────
+async function verifySchedule() {
+  const btn = document.getElementById('btn-verify-schedule');
+  const out = document.getElementById('verify-schedule-output');
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+  out.innerHTML = '';
+
+  try {
+    const res = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
+    if (!res.ok) throw new Error('No se pudo conectar con openfootball');
+    const data = await res.json();
+    const matches = data.matches || [];
+
+    // Construir mapa source: "Home|Away" → datetime UTC
+    const sourceMap = {};
+    matches.forEach(m => {
+      if (!m.team1 || !m.team2) return;
+      const timeParts = (m.time || '12:00 UTC-6').split(' ');
+      const timeStr = timeParts[0];
+      const tzStr   = timeParts[1] || 'UTC-6';
+      const tzMatch = tzStr.match(/UTC([+-]\d+)/);
+      const tzOffset = tzMatch ? parseInt(tzMatch[1]) : -6;
+      const localMs = new Date(m.date + 'T' + timeStr + ':00').getTime();
+      const utcMs   = localMs - tzOffset * 60 * 60 * 1000;
+      const utcDate = new Date(utcMs);
+      const pad = n => String(n).padStart(2,'0');
+      const utcISO = utcDate.getUTCFullYear() + '-'
+        + pad(utcDate.getUTCMonth()+1) + '-'
+        + pad(utcDate.getUTCDate()) + 'T'
+        + pad(utcDate.getUTCHours()) + ':'
+        + pad(utcDate.getUTCMinutes()) + ':00Z';
+      sourceMap[m.team1 + '|' + m.team2] = { utcISO, rawTime: m.time, date: m.date };
+    });
+
+    // Comparar contra partidos guardados
+    let issues = [];
+    let ok = 0;
+    state.matches.forEach(m => {
+      const key = m.home + '|' + m.away;
+      const src = sourceMap[key];
+      if (!src) return; // partido no encontrado en source (ok, puede ser manual)
+      // Normalizar ambos a minutos UTC para comparar
+      const savedDate  = new Date(m.datetime);
+      const sourceDate = new Date(src.utcISO);
+      const diffMin = Math.abs((savedDate.getTime() - sourceDate.getTime()) / 60000);
+      if (diffMin > 1) {
+        // Convertir a hora Guatemala para mostrar
+        const toGT = dt => {
+          const d = new Date(new Date(dt).getTime() - 6*60*60*1000);
+          const pad = n => String(n).padStart(2,'0');
+          return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
+        };
+        issues.push({
+          match: m,
+          savedGT:  toGT(m.datetime),
+          correctGT: toGT(src.utcISO),
+          correctUTC: src.utcISO,
+          diffMin
+        });
+      } else {
+        ok++;
+      }
+    });
+
+    if (issues.length === 0) {
+      out.innerHTML = '<div style="color:var(--success-text);background:var(--success-bg);border-radius:var(--radius);padding:10px 14px;font-size:13px">'
+        + '<i class="ti ti-circle-check"></i> ¡Todos los horarios están correctos! (' + ok + ' partidos verificados)</div>';
+    } else {
+      let html = '<div style="font-size:13px;margin-bottom:10px;color:var(--danger-text)">'
+        + '<i class="ti ti-alert-triangle"></i> ' + issues.length + ' partido(s) con horario incorrecto:</div>';
+      issues.forEach(issue => {
+        html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--bg-secondary);border-radius:var(--radius);margin-bottom:6px;font-size:13px">'
+          + '<span style="font-weight:600;flex:1;min-width:140px">' + issue.match.home + ' vs ' + issue.match.away + '</span>'
+          + '<span style="color:var(--danger-text)">Guardado: ' + issue.savedGT + ' GT</span>'
+          + '<span style="color:var(--text-secondary)">→</span>'
+          + '<span style="color:var(--success-text)">Correcto: ' + issue.correctGT + ' GT</span>'
+          + '<button class="btn btn-sm btn-primary" style="font-size:11px;padding:3px 8px" '
+          + 'onclick="fixOneSchedule('' + issue.match.id + '','' + issue.correctUTC + '',this)">'
+          + '<i class="ti ti-check"></i> Corregir</button>'
+          + '</div>';
+      });
+      out.innerHTML = html;
+    }
+  } catch(e) {
+    out.innerHTML = '<div style="color:var(--danger-text);font-size:13px"><i class="ti ti-alert-circle"></i> Error: ' + e.message + '</div>';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Verificar horarios';
+}
+
+async function fixOneSchedule(matchId, correctUTC, btn) {
+  const m = state.matches.find(x => x.id === matchId);
+  if (!m) return;
+  m.datetime = correctUTC;
+  btn.disabled = true;
+  btn.textContent = '✓ Corregido';
+  btn.style.background = 'var(--success-bg)';
+  btn.style.color = 'var(--success-text)';
+  await saveState();
+  renderMatches();
+}
+
+// ─── Corrección masiva de horarios ───────────────────────────────────────────
+function openFixTimesModal() {
+  // Previsualizar partidos afectados
+  const fromHour = document.getElementById('fix-from-hour').value.padStart(2,'0') + ':00';
+  const toHour   = document.getElementById('fix-to-hour').value.padStart(2,'0')   + ':00';
+  const affected = state.matches.filter(m => m.datetime && m.datetime.includes('T' + fromHour + ':'));
+  document.getElementById('fix-times-preview').textContent =
+    affected.length > 0
+      ? `Se cambiarán ${affected.length} partido(s) de ${fromHour} → ${toHour}`
+      : `No hay partidos con hora ${fromHour}`;
+  document.getElementById('modal-fixtimes-overlay').classList.remove('hidden');
+}
+function closeFixTimesModal() {
+  document.getElementById('modal-fixtimes-overlay').classList.add('hidden');
+}
+async function confirmFixTimes() {
+  const fromHour = document.getElementById('fix-from-hour').value.padStart(2,'0') + ':00';
+  const toHour   = document.getElementById('fix-to-hour').value.padStart(2,'0')   + ':00';
+  let changed = 0;
+  state.matches.forEach(m => {
+    if (m.datetime && m.datetime.includes('T' + fromHour + ':')) {
+      m.datetime = m.datetime.replace('T' + fromHour + ':', 'T' + toHour + ':');
+      changed++;
+    }
+  });
+  closeFixTimesModal();
+  await saveState();
+  renderAdminMatches();
+  renderMatches();
+  alert(`✓ ${changed} partido(s) actualizados de ${fromHour} → ${toHour}`);
 }
 
 // ─── Borrar todos los partidos ───────────────────────────────────────────────

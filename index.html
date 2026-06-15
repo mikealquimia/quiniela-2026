@@ -167,6 +167,16 @@
             <button class="btn btn-sm filter-btn" onclick="filterComparar('done',this)">Finalizados</button>
           </div>
         </div>
+        <!-- Filtro por fecha en Comparar -->
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border)">
+          <span style="font-size:13px;color:var(--text-secondary);white-space:nowrap"><i class="ti ti-calendar-search"></i> Filtrar por fecha:</span>
+          <select id="comparar-date-filter" onchange="renderComparar(_compararFilter)" style="flex:1;min-width:160px;max-width:260px">
+            <option value="all">Todas las fechas</option>
+          </select>
+          <button class="btn btn-sm" onclick="document.getElementById('comparar-date-filter').value='all';renderComparar(_compararFilter)">
+            <i class="ti ti-x"></i> Limpiar
+          </button>
+        </div>
       </div>
       <div id="comparar-list"></div>
     </div>
@@ -183,8 +193,12 @@
           <button class="btn btn-sm" id="btn-sync" onclick="syncResults()" style="background:var(--success-bg);border-color:var(--success-text);color:var(--success-text)">
             <i class="ti ti-refresh"></i> Actualizar resultados
           </button>
+          <button class="btn btn-sm" id="btn-verify-schedule" onclick="verifySchedule()" style="background:var(--warning-bg,#fff8e6);border-color:var(--warning-text,#b45309);color:var(--warning-text,#b45309)">
+            <i class="ti ti-clock-check"></i> Verificar horarios
+          </button>
           <span style="font-size:11px;color:var(--accent-text)">Partidos: openfootball (gratis) · Resultados: API-Football (requiere key gratuita)</span>
         </div>
+        <div id="verify-schedule-output" style="margin-top:10px"></div>
       </div>
 
       <div class="admin-grid">
@@ -268,6 +282,9 @@
             <select id="admin-date-filter" onchange="renderAdminMatches()" style="font-size:12px;padding:5px 8px">
               <option value="all">Todas las fechas</option>
             </select>
+            <button class="btn btn-sm" onclick="openFixTimesModal()" title="Corregir horarios masivamente">
+              <i class="ti ti-clock-edit"></i> Corregir horarios
+            </button>
             <button class="btn btn-sm btn-danger" onclick="openDeleteAllModal()">
               <i class="ti ti-trash"></i> Borrar todos
             </button>
@@ -363,6 +380,41 @@
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-sm" onclick="closeDeleteAllModal()">Cancelar</button>
         <button class="btn btn-sm btn-danger" onclick="confirmDeleteAll()"><i class="ti ti-trash"></i> Sí, borrar todo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL CORREGIR HORARIOS -->
+  <div id="modal-fixtimes-overlay" class="modal-overlay hidden" onclick="closeFixTimesModal()">
+    <div class="modal-box" style="max-width:400px" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <span class="section-title" style="margin:0"><i class="ti ti-clock-edit"></i> Corregir horarios masivamente</span>
+      </div>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:1rem">
+        Cambia el horario de todos los partidos que tengan una hora específica. Útil para corregir partidos importados con hora incorrecta.
+      </p>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:1rem">
+        <div class="form-group" style="margin:0;flex:1;min-width:100px">
+          <label style="font-size:12px">Hora actual (incorrecta)</label>
+          <div style="display:flex;align-items:center;gap:4px">
+            <input type="number" id="fix-from-hour" min="0" max="23" value="17" style="width:60px;text-align:center" oninput="document.getElementById('fix-times-preview').textContent=''">
+            <span style="font-size:13px;color:var(--text-secondary)">:00</span>
+          </div>
+        </div>
+        <div style="font-size:20px;color:var(--text-secondary);padding-bottom:4px">→</div>
+        <div class="form-group" style="margin:0;flex:1;min-width:100px">
+          <label style="font-size:12px">Hora correcta</label>
+          <div style="display:flex;align-items:center;gap:4px">
+            <input type="number" id="fix-to-hour" min="0" max="23" value="19" style="width:60px;text-align:center" oninput="document.getElementById('fix-times-preview').textContent=''">
+            <span style="font-size:13px;color:var(--text-secondary)">:00</span>
+          </div>
+        </div>
+      </div>
+      <div id="fix-times-preview" style="font-size:13px;color:var(--accent-text);background:var(--accent-bg);border-radius:var(--radius);padding:8px 12px;margin-bottom:1rem;min-height:32px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-sm" onclick="closeFixTimesModal()">Cancelar</button>
+        <button class="btn btn-sm" onclick="openFixTimesModal()" style="color:var(--text-secondary)"><i class="ti ti-search"></i> Previsualizar</button>
+        <button class="btn btn-sm btn-primary" onclick="confirmFixTimes()"><i class="ti ti-check"></i> Aplicar cambio</button>
       </div>
     </div>
   </div>
