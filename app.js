@@ -1086,7 +1086,7 @@ async function verifySchedule() {
           + '<span style="color:var(--text-secondary)">→</span>'
           + '<span style="color:var(--success-text)">Correcto: ' + issue.correctGT + ' GT</span>'
           + '<button class="btn btn-sm btn-primary" style="font-size:11px;padding:3px 8px" '
-          + 'onclick="fixOneSchedule('' + issue.match.id + '','' + issue.correctUTC + '',this)">'
+          + 'onclick="fixOneSchedule(\'' + issue.match.id + '\',\'' + issue.correctUTC + '\',this)">'
           + '<i class="ti ti-check"></i> Corregir</button>'
           + '</div>';
       });
