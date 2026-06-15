@@ -214,10 +214,10 @@ function populateCompararDateFilter() {
     o.textContent = (d === today ? '\u{1F4C5} Hoy \u2014 ' : '') + label.charAt(0).toUpperCase() + label.slice(1);
     sel.appendChild(o);
   });
-  if (current) {
+  if (current && current !== 'all') {
     sel.value = current;
-  } else if (dates.includes(today)) {
-    sel.value = today;
+  } else {
+    if (dates.includes(today)) sel.value = today;
   }
 }
 
@@ -365,11 +365,11 @@ function populateDateFilter() {
     o.textContent = (d === today ? '📅 Hoy — ' : '') + label.charAt(0).toUpperCase() + label.slice(1);
     sel.appendChild(o);
   });
-  // Si no hay valor previo, auto-seleccionar hoy si existe en la lista
-  if (current) {
+  // Si el usuario ya eligió una fecha específica, mantenerla; si no, auto-seleccionar hoy
+  if (current && current !== 'all') {
     sel.value = current;
-  } else if (dates.includes(today)) {
-    sel.value = today;
+  } else if (!current || current === 'all') {
+    if (dates.includes(today)) sel.value = today;
   }
 }
 
