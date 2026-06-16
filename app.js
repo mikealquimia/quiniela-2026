@@ -28,6 +28,104 @@ let state = {
 };
 
 const COLORS = ['#3B6D11','#185FA5','#A32D2D','#854F0B','#993556','#3C3489','#0F6E56','#993C1D'];
+
+// ─── Banderas de países (emoji via código ISO 3166-1 alpha-2) ────────────────
+const COUNTRY_FLAGS = {
+  // Grupo A-Z y equipos del Mundial 2026
+  'Mexico': 'MX', 'México': 'MX',
+  'USA': 'US', 'United States': 'US', 'Estados Unidos': 'US',
+  'Canada': 'CA', 'Canadá': 'CA',
+  'Brazil': 'BR', 'Brasil': 'BR',
+  'Argentina': 'AR',
+  'Colombia': 'CO',
+  'Ecuador': 'EC',
+  'Uruguay': 'UY',
+  'Chile': 'CL',
+  'Paraguay': 'PY',
+  'Peru': 'PE', 'Perú': 'PE',
+  'Bolivia': 'BO',
+  'Venezuela': 'VE',
+  'Spain': 'ES', 'España': 'ES',
+  'France': 'FR', 'Francia': 'FR',
+  'Germany': 'DE', 'Alemania': 'DE',
+  'England': 'GB', 'Inglaterra': 'GB',
+  'Portugal': 'PT',
+  'Netherlands': 'NL', 'Países Bajos': 'NL', 'Holanda': 'NL',
+  'Belgium': 'BE', 'Bélgica': 'BE',
+  'Italy': 'IT', 'Italia': 'IT',
+  'Croatia': 'HR', 'Croacia': 'HR',
+  'Denmark': 'DK', 'Dinamarca': 'DK',
+  'Switzerland': 'CH', 'Suiza': 'CH',
+  'Austria': 'AT',
+  'Serbia': 'RS',
+  'Poland': 'PL', 'Polonia': 'PL',
+  'Ukraine': 'UA', 'Ucrania': 'UA',
+  'Hungary': 'HU', 'Hungría': 'HU',
+  'Slovakia': 'SK', 'Eslovaquia': 'SK',
+  'Slovenia': 'SI', 'Eslovenia': 'SI',
+  'Romania': 'RO', 'Rumanía': 'RO',
+  'Czechia': 'CZ', 'Czech Republic': 'CZ', 'República Checa': 'CZ',
+  'Scotland': 'GB', 'Escocia': 'GB',
+  'Wales': 'GB', 'Gales': 'GB',
+  'Turkey': 'TR', 'Turquía': 'TR',
+  'Greece': 'GR', 'Grecia': 'GR',
+  'Morocco': 'MA', 'Marruecos': 'MA',
+  'Senegal': 'SN',
+  'Nigeria': 'NG',
+  'Ghana': 'GH',
+  'Ivory Coast': 'CI', 'Côte d\'Ivoire': 'CI', 'Costa de Marfil': 'CI',
+  'Egypt': 'EG', 'Egipto': 'EG',
+  'Cameroon': 'CM', 'Camerún': 'CM',
+  'Tunisia': 'TN', 'Túnez': 'TN',
+  'Algeria': 'DZ', 'Argelia': 'DZ',
+  'Mali': 'ML',
+  'South Africa': 'ZA', 'Sudáfrica': 'ZA',
+  'DR Congo': 'CD', 'Congo': 'CD',
+  'Japan': 'JP', 'Japón': 'JP',
+  'South Korea': 'KR', 'Corea del Sur': 'KR', 'Korea Republic': 'KR',
+  'Australia': 'AU',
+  'Iran': 'IR', 'Irán': 'IR',
+  'Saudi Arabia': 'SA', 'Arabia Saudita': 'SA',
+  'Qatar': 'QA',
+  'Iraq': 'IQ',
+  'Jordan': 'JO', 'Jordania': 'JO',
+  'Uzbekistan': 'UZ', 'Uzbekistán': 'UZ',
+  'China': 'CN',
+  'Indonesia': 'ID',
+  'New Zealand': 'NZ', 'Nueva Zelanda': 'NZ',
+  'Costa Rica': 'CR',
+  'Panama': 'PA', 'Panamá': 'PA',
+  'Honduras': 'HN',
+  'Guatemala': 'GT',
+  'Jamaica': 'JM',
+  'Trinidad and Tobago': 'TT',
+  'Cuba': 'CU',
+  'Haiti': 'HT', 'Haití': 'HT',
+  'El Salvador': 'SV',
+  'Nicaragua': 'NI',
+};
+
+function countryFlag(teamName) {
+  if (!teamName) return '';
+  // Buscar directamente
+  const iso = COUNTRY_FLAGS[teamName];
+  if (iso) {
+    // Convertir código ISO a emoji de bandera
+    return iso.toUpperCase().split('').map(c => String.fromCodePoint(0x1F1E0 + c.charCodeAt(0) - 65)).join('');
+  }
+  // Buscar ignorando mayúsculas/minúsculas y coincidencias parciales
+  const key = Object.keys(COUNTRY_FLAGS).find(k =>
+    k.toLowerCase() === teamName.toLowerCase() ||
+    teamName.toLowerCase().includes(k.toLowerCase()) ||
+    k.toLowerCase().includes(teamName.toLowerCase())
+  );
+  if (key) {
+    const iso2 = COUNTRY_FLAGS[key];
+    return iso2.toUpperCase().split('').map(c => String.fromCodePoint(0x1F1E0 + c.charCodeAt(0) - 65)).join('');
+  }
+  return '';
+}
+
 function colorFor(name) {
   let h = 0;
   for (let c of name) h = (h * 31 + c.charCodeAt(0)) % COLORS.length;
@@ -443,12 +541,14 @@ function renderMatches() {
            <input type="number" min="0" max="20" class="score-input" value="${pick.away}"
              placeholder="0" onchange="setPick('${editUser.id}','${m.id}','away',this.value)">`;
 
+      const flagHome = countryFlag(m.home);
+      const flagAway = countryFlag(m.away);
       html += `<div class="match-row">
         <div class="match-teams">
           <div class="match-teams-row">
-            <span class="team-name right">${m.home}</span>
+            <span class="team-name right">${flagHome ? `<span class="team-flag">${flagHome}</span> ` : ''}${m.home}</span>
             ${inputsOrPick}
-            <span class="team-name">${m.away}</span>
+            <span class="team-name">${m.away}${flagAway ? ` <span class="team-flag">${flagAway}</span>` : ''}</span>
           </div>
           <div class="match-meta">
             <span>${dtStr}</span>

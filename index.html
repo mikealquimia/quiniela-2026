@@ -167,6 +167,15 @@
             <button class="btn btn-sm filter-btn" onclick="filterComparar('done',this)">Finalizados</button>
           </div>
         </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border)">
+          <span style="font-size:13px;color:var(--text-secondary);white-space:nowrap"><i class="ti ti-calendar-search"></i> Filtrar por fecha:</span>
+          <select id="comparar-date-filter" onchange="renderComparar(_compararFilter)" style="flex:1;min-width:160px;max-width:260px">
+            <option value="all">Todas las fechas</option>
+          </select>
+          <button class="btn btn-sm" onclick="document.getElementById('comparar-date-filter').value='all';renderComparar(_compararFilter)" title="Ver todas las fechas">
+            <i class="ti ti-x"></i> Limpiar
+          </button>
+        </div>
       </div>
       <div id="comparar-list"></div>
     </div>

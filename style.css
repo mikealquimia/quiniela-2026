@@ -401,3 +401,11 @@ body::before {
   color: var(--accent-text);
   font-weight: 500;
 }
+
+/* TEAM FLAGS */
+.team-flag {
+  font-size: 1.1em;
+  line-height: 1;
+  display: inline-block;
+  vertical-align: middle;
+}
