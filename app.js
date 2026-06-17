@@ -251,6 +251,7 @@ function doLogin() {
   const elResult2 = document.getElementById('pts-result');
   if (elExact2)  elExact2.value  = state.points.exact;
   if (elResult2) elResult2.value = state.points.result;
+  refreshAll();
 }
 
 function doLogout() {
