@@ -184,6 +184,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .badge-warning { background: var(--warning-bg); color: var(--warning-text); }
 .badge-danger { background: var(--danger-bg); color: var(--danger-text); }
 .badge-gray { background: var(--bg-secondary); color: var(--text-secondary); }
+.badge-purple { background: #7c3aed22; color: #7c3aed; }
 
 /* ALERTS */
 .alert {

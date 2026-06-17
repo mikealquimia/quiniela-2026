@@ -121,7 +121,8 @@
                 <th class="text-right">Pts</th>
                 <th class="text-right">Exactos</th>
                 <th class="text-right">Diferencia</th>
-                <th class="text-right">Resultados</th>
+                <th class="text-right">1 Marcador</th>
+                <th class="text-right">Ganador</th>
                 <th class="text-right">Jugados</th>
               </tr>
             </thead>
@@ -219,12 +220,16 @@
           <div class="section-title"><i class="ti ti-adjustments"></i> Sistema de puntos</div>
           <div class="form-row">
             <div class="form-group">
-              <label>Pts marcador exacto</label>
+              <label>Pts marcador exacto (ambos)</label>
               <input type="number" id="pts-exact" value="5" min="0">
             </div>
             <div class="form-group">
-              <label>Pts diferencia correcta</label>
-              <input type="number" id="pts-diff" value="3" min="0">
+              <label>Pts diferencia de goles</label>
+              <input type="number" id="pts-diff" value="4" min="0">
+            </div>
+            <div class="form-group">
+              <label>Pts marcador exacto (1 equipo)</label>
+              <input type="number" id="pts-oneTeam" value="3" min="0">
             </div>
             <div class="form-group">
               <label>Pts ganador / empate</label>

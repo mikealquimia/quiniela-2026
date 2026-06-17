@@ -22,7 +22,7 @@ let state = {
   users: [],
   matches: [],
   picks: {},
-  points: { exact: 5, diff: 3, result: 2 },
+  points: { exact: 5, diff: 4, oneTeam: 3, result: 2 },
   currentUser: null,
   editingAs: null
 };
@@ -151,9 +151,11 @@ async function initFirebase() {
       state.users   = d.users   || [];
       state.matches = d.matches || [];
       state.picks   = d.picks   || {};
-      state.points  = d.points  || { exact: 5, diff: 3, result: 2 };
-      // Ensure diff tier exists for older saved data
-      if (state.points.diff === undefined) state.points.diff = 3;
+      state.points  = d.points  || { exact: 5, diff: 4, oneTeam: 3, result: 2 };
+      // Ensure all tiers exist for older saved data
+      if (state.points.diff     === undefined) state.points.diff     = 4;
+      if (state.points.oneTeam  === undefined) state.points.oneTeam  = 3;
+      if (state.points.result   === undefined) state.points.result   = 2;
       if (state.currentUser) {
         // Refresh current user object in case admin status changed
         state.currentUser = state.users.find(u => u.id === state.currentUser.id) || state.currentUser;
@@ -247,9 +249,10 @@ function doLogin() {
     adminTab.classList.add('hidden');
   }
 
-  document.getElementById('pts-exact').value   = state.points.exact;
-  document.getElementById('pts-diff').value    = state.points.diff;
-  document.getElementById('pts-result').value = state.points.result;
+  document.getElementById('pts-exact').value    = state.points.exact;
+  document.getElementById('pts-diff').value     = state.points.diff;
+  document.getElementById('pts-oneTeam').value  = state.points.oneTeam;
+  document.getElementById('pts-result').value   = state.points.result;
   refreshAll();
 }
 
@@ -274,9 +277,10 @@ function refreshAll() {
   renderComparar(_compararFilter);
   renderAdminMatches();
   renderAdminUsers();
-  document.getElementById('pts-exact').value   = state.points.exact;
-  document.getElementById('pts-diff').value    = state.points.diff;
-  document.getElementById('pts-result').value = state.points.result;
+  document.getElementById('pts-exact').value    = state.points.exact;
+  document.getElementById('pts-diff').value     = state.points.diff;
+  document.getElementById('pts-oneTeam').value  = state.points.oneTeam;
+  document.getElementById('pts-result').value   = state.points.result;
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
@@ -348,11 +352,13 @@ function calcPoints(userId, match) {
   const np = normPick(pick);
   const rh = parseInt(match.result.home), ra = parseInt(match.result.away);
   const ph = parseInt(np.home), pa = parseInt(np.away);
-  // Tier 1: exact score
+  // Tier 1: exact score both teams (5pts)
   if (ph === rh && pa === ra) return state.points.exact;
-  // Tier 2: same goal difference (e.g. predict 2-0 and result is 3-1 → diff is +2 both)
+  // Tier 2: same goal difference (e.g. predict 2-0 and result is 3-1 → diff is +2 both) (4pts)
   if ((ph - pa) === (rh - ra)) return state.points.diff;
-  // Tier 3: correct winner or draw
+  // Tier 3: exact score of at least one team (3pts)
+  if (ph === rh || pa === ra) return state.points.oneTeam;
+  // Tier 4: correct winner or draw (2pts)
   const rRes = rh > ra ? 'H' : rh < ra ? 'A' : 'D';
   const pRes = ph > pa ? 'H' : ph < pa ? 'A' : 'D';
   return rRes === pRes ? state.points.result : 0;
@@ -360,7 +366,7 @@ function calcPoints(userId, match) {
 
 function getTableData() {
   return state.users.map(u => {
-    let pts = 0, exact = 0, diff = 0, result = 0, played = 0;
+    let pts = 0, exact = 0, diff = 0, oneTeam = 0, result = 0, played = 0;
     state.matches.forEach(m => {
       if (m.result && m.result.home !== '') {
         played++;
@@ -368,10 +374,11 @@ function getTableData() {
         pts += p;
         if (p === state.points.exact) exact++;
         else if (p === state.points.diff) diff++;
+        else if (p === state.points.oneTeam) oneTeam++;
         else if (p === state.points.result) result++;
       }
     });
-    return { user: u, pts, exact, diff, result, played };
+    return { user: u, pts, exact, diff, oneTeam, result, played };
   }).sort((a, b) => b.pts - a.pts || b.exact - a.exact);
 }
 
@@ -396,7 +403,7 @@ function renderMyStats() {
   const grid = document.getElementById('my-stats-grid');
   if (!grid || !state.currentUser) return;
   const u = state.currentUser;
-  let pts = 0, exact = 0, diff = 0, result = 0, played = 0, pending = 0;
+  let pts = 0, exact = 0, diff = 0, oneTeam = 0, result = 0, played = 0, pending = 0;
   state.matches.forEach(m => {
     if (m.result && m.result.home !== '') {
       played++;
@@ -404,6 +411,7 @@ function renderMyStats() {
       pts += p;
       if (p === state.points.exact) exact++;
       else if (p === state.points.diff) diff++;
+      else if (p === state.points.oneTeam) oneTeam++;
       else if (p === state.points.result) result++;
     } else {
       pending++;
@@ -521,8 +529,10 @@ function renderMatches() {
           statusBadge = `<span class="badge badge-success">+${pts} exacto ✓</span>`;
         else if (pts === state.points.diff)
           statusBadge = `<span class="badge badge-warning">+${pts} diferencia</span>`;
+        else if (pts === state.points.oneTeam)
+          statusBadge = `<span class="badge badge-info">+${pts} un marcador</span>`;
         else if (pts === state.points.result)
-          statusBadge = `<span class="badge badge-info">+${pts} resultado</span>`;
+          statusBadge = `<span class="badge badge-purple">+${pts} ganador</span>`;
         else if (pickSet(pick))
           statusBadge = `<span class="badge badge-gray">+0</span>`;
       }
@@ -584,7 +594,8 @@ function renderTabla() {
     <div class="stat-card"><div class="stat-label">Participantes</div><div class="stat-value">${state.users.length}</div></div>
     <div class="stat-card"><div class="stat-label">Pts por exacto</div><div class="stat-value">${state.points.exact}</div></div>
     <div class="stat-card"><div class="stat-label">Pts por diferencia</div><div class="stat-value">${state.points.diff}</div></div>
-    <div class="stat-card"><div class="stat-label">Pts por resultado</div><div class="stat-value">${state.points.result}</div></div>
+    <div class="stat-card"><div class="stat-label">Pts por un marcador</div><div class="stat-value">${state.points.oneTeam}</div></div>
+    <div class="stat-card"><div class="stat-label">Pts por ganador</div><div class="stat-value">${state.points.result}</div></div>
   `;
 
   const medals = ['🥇', '🥈', '🥉'];
@@ -602,7 +613,8 @@ function renderTabla() {
       <td class="text-right"><strong style="font-size:16px">${d.pts}</strong></td>
       <td class="text-right"><span class="badge badge-success">${d.exact}</span></td>
       <td class="text-right"><span class="badge badge-warning">${d.diff}</span></td>
-      <td class="text-right"><span class="badge badge-info">${d.result}</span></td>
+      <td class="text-right"><span class="badge badge-info">${d.oneTeam}</span></td>
+      <td class="text-right"><span class="badge badge-purple">${d.result}</span></td>
       <td class="text-right" style="color:var(--text-secondary)">${d.played}</td>
     </tr>`;
   }).join('');
@@ -616,7 +628,7 @@ function renderStats() {
     const total = d.played;
     const pctExact  = total > 0 ? Math.round(d.exact / total * 100) : 0;
     const pctDiff   = total > 0 ? Math.round(d.diff  / total * 100) : 0;
-    const pctResult = total > 0 ? Math.round((d.exact + d.diff + d.result) / total * 100) : 0;
+    const pctResult = total > 0 ? Math.round((d.exact + d.diff + d.oneTeam + d.result) / total * 100) : 0;
     const streak = getStreak(d.user.id);
     const color = colorFor(d.user.name);
     return `<tr>
@@ -857,9 +869,10 @@ async function deleteUser(userId) {
 }
 
 async function savePoints() {
-  state.points.exact  = parseInt(document.getElementById('pts-exact').value)  || 5;
-  state.points.diff   = parseInt(document.getElementById('pts-diff').value)   || 3;
-  state.points.result = parseInt(document.getElementById('pts-result').value) || 2;
+  state.points.exact   = parseInt(document.getElementById('pts-exact').value)   || 5;
+  state.points.diff    = parseInt(document.getElementById('pts-diff').value)    || 4;
+  state.points.oneTeam = parseInt(document.getElementById('pts-oneTeam').value) || 3;
+  state.points.result  = parseInt(document.getElementById('pts-result').value)  || 2;
   await saveState();
 }
 
@@ -1069,7 +1082,8 @@ function renderComparar(filter = 'all') {
           pts = calcPoints(u.id, m);
           if (pts === state.points.exact) badgeCls = 'badge-success';
           else if (pts === state.points.diff) badgeCls = 'badge-warning';
-          else if (pts === state.points.result) badgeCls = 'badge-info';
+          else if (pts === state.points.oneTeam) badgeCls = 'badge-info';
+          else if (pts === state.points.result) badgeCls = 'badge-purple';
           else badgeCls = 'badge-danger';
         }
         const np3 = normPick(pick); const pickStr = hasPick ? np3.home + '–' + np3.away : '–';
