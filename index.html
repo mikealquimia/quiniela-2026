@@ -120,8 +120,6 @@
                 <th>Jugador</th>
                 <th class="text-right">Pts</th>
                 <th class="text-right">Exactos</th>
-                <th class="text-right">Diferencia</th>
-                <th class="text-right">1 Marcador</th>
                 <th class="text-right">Ganador</th>
                 <th class="text-right">Jugados</th>
               </tr>
@@ -146,7 +144,6 @@
               <tr>
                 <th>Jugador</th>
                 <th class="text-right">% Exactos</th>
-                <th class="text-right">% Diferencia</th>
                 <th class="text-right">% Acertado</th>
                 <th class="text-right">Racha</th>
               </tr>
@@ -224,17 +221,14 @@
               <input type="number" id="pts-exact" value="5" min="0">
             </div>
             <div class="form-group">
-              <label>Pts diferencia de goles</label>
-              <input type="number" id="pts-diff" value="4" min="0">
-            </div>
-            <div class="form-group">
-              <label>Pts marcador exacto (1 equipo)</label>
-              <input type="number" id="pts-oneTeam" value="3" min="0">
-            </div>
-            <div class="form-group">
-              <label>Pts ganador / empate</label>
+              <label>Pts acertar ganador</label>
               <input type="number" id="pts-result" value="2" min="0">
             </div>
+          </div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5">
+            <i class="ti ti-info-circle"></i>
+            <b>Bonos automáticos</b> (solo si no acertaste el marcador exacto):
+            +1 pt por diferencia de goles correcta · +1 pt por acertar el marcador de un equipo
           </div>
           <button class="btn btn-sm" onclick="savePoints()">
             <i class="ti ti-check"></i> Guardar
