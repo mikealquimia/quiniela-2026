@@ -247,8 +247,10 @@ function doLogin() {
     adminTab.classList.add('hidden');
   }
 
-  document.getElementById('pts-exact').value    = state.points.exact;
-  document.getElementById('pts-result').value   = state.points.result;
+  const elExact2  = document.getElementById('pts-exact');
+  const elResult2 = document.getElementById('pts-result');
+  if (elExact2)  elExact2.value  = state.points.exact;
+  if (elResult2) elResult2.value = state.points.result;
 }
 
 function doLogout() {
@@ -272,8 +274,10 @@ function refreshAll() {
   renderComparar(_compararFilter);
   renderAdminMatches();
   renderAdminUsers();
-  document.getElementById('pts-exact').value    = state.points.exact;
-  document.getElementById('pts-result').value   = state.points.result;
+  const elExact  = document.getElementById('pts-exact');
+  const elResult = document.getElementById('pts-result');
+  if (elExact)  elExact.value  = state.points.exact;
+  if (elResult) elResult.value = state.points.result;
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
@@ -572,6 +576,7 @@ async function setPick(userId, matchId, side, val) {
 
 // ─── Render: Tabla ───────────────────────────────────────────────────────────
 function renderTabla() {
+  if (!document.getElementById('tabla-body')) return;
   const data = getTableData();
   const totalPlayed = state.matches.filter(m => m.result && m.result.home !== '').length;
 
@@ -606,6 +611,7 @@ function renderTabla() {
 
 // ─── Render: Stats ───────────────────────────────────────────────────────────
 function renderStats() {
+  if (!document.getElementById('stats-body')) return;
   const data = getTableData();
 
   document.getElementById('stats-body').innerHTML = data.map(d => {
