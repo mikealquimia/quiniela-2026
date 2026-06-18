@@ -6,7 +6,7 @@
   <title>Pitaya Mundialista</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.10.0/dist/tabler-icons.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,32 +15,35 @@
 
   <!-- LOGIN -->
   <div id="screen-login">
-    <div class="login-hero">
-      <div class="trophy-icon">🏆</div>
-      <h1>Pitaya Mundialista 2026</h1>
-      <p>Selecciona tu nombre e ingresa tu PIN</p>
-    </div>
-    <div class="login-card">
-      <div class="form-group">
-        <label>¿Quién eres?</label>
-        <select id="login-select">
-          <option value="">— Selecciona tu nombre —</option>
-        </select>
+    <div class="login-pass">
+      <div class="pass-stub">
+        <span class="pass-eyebrow">Mundial · 2026</span>
+        <div class="pass-trophy">🏆</div>
+        <h1 class="pass-title">Pitaya<br>Mundialista</h1>
+        <span class="pass-sub">Tu pase a la quiniela</span>
       </div>
-      <div class="form-group">
-        <label>PIN (4 dígitos)</label>
-        <div class="pin-container">
-          <input type="password" inputmode="numeric" maxlength="1" class="pin-box" id="pin-0" oninput="pinNext(this,1)" onkeydown="pinBack(event,this,null)">
-          <input type="password" inputmode="numeric" maxlength="1" class="pin-box" id="pin-1" oninput="pinNext(this,2)" onkeydown="pinBack(event,this,0)">
-          <input type="password" inputmode="numeric" maxlength="1" class="pin-box" id="pin-2" oninput="pinNext(this,3)" onkeydown="pinBack(event,this,1)">
-          <input type="password" inputmode="numeric" maxlength="1" class="pin-box" id="pin-3" oninput="pinNext(this,null)" onkeydown="pinBack(event,this,2)" onkeypress="if(event.key==='Enter')doLogin()">
+      <div class="pass-body">
+        <div class="form-group">
+          <label>¿Quién eres?</label>
+          <select id="login-select">
+            <option value="">— Selecciona tu nombre —</option>
+          </select>
         </div>
-        <p id="pin-error" class="pin-error hidden">PIN incorrecto, intenta de nuevo</p>
+        <div class="form-group">
+          <label>Tu PIN</label>
+          <div class="pin-container">
+            <input type="password" inputmode="numeric" maxlength="1" class="pin-box" id="pin-0" oninput="pinNext(this,1)" onkeydown="pinBack(event,this,null)">
+            <input type="password" inputmode="numeric" maxlength="1" class="pin-box" id="pin-1" oninput="pinNext(this,2)" onkeydown="pinBack(event,this,0)">
+            <input type="password" inputmode="numeric" maxlength="1" class="pin-box" id="pin-2" oninput="pinNext(this,3)" onkeydown="pinBack(event,this,1)">
+            <input type="password" inputmode="numeric" maxlength="1" class="pin-box" id="pin-3" oninput="pinNext(this,null)" onkeydown="pinBack(event,this,2)" onkeypress="if(event.key==='Enter')doLogin()">
+          </div>
+          <p id="pin-error" class="pin-error hidden">PIN incorrecto, intenta de nuevo</p>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="doLogin()">
+          <i class="ti ti-login"></i> Entrar
+        </button>
+        <p class="login-hint">¿Primera vez? Pide al admin que te registre</p>
       </div>
-      <button class="btn btn-primary btn-block" onclick="doLogin()">
-        <i class="ti ti-login"></i> Entrar
-      </button>
-      <p class="login-hint">¿Primera vez? Pide al admin que te registre</p>
     </div>
   </div>
 
@@ -71,11 +74,11 @@
       <button class="tab" onclick="showTab('tab-tabla',this)">
         <i class="ti ti-trophy"></i> Tabla
       </button>
-      <button class="tab" onclick="showTab('tab-stats',this)">
-        <i class="ti ti-chart-bar"></i> Estadísticas
-      </button>
       <button class="tab" onclick="showTab('tab-comparar',this)">
         <i class="ti ti-eye"></i> Comparar
+      </button>
+      <button class="tab" onclick="showTab('tab-stats',this)">
+        <i class="ti ti-chart-bar"></i> Estadísticas
       </button>
       <button class="tab hidden" id="tab-admin-btn" onclick="showTab('tab-admin',this)">
         <i class="ti ti-settings"></i> Admin
@@ -91,17 +94,13 @@
         <i class="ti ti-info-circle"></i> Puedes editar tu quiniela hasta 1 hora antes de cada partido.
       </div>
 
-      <!-- Filtro por fecha -->
-      <div class="card" style="margin-bottom:1rem;padding:10px 14px">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-size:13px;color:var(--text-secondary);white-space:nowrap"><i class="ti ti-calendar-search"></i> Filtrar por fecha:</span>
-          <select id="date-filter" onchange="renderMatches()" style="flex:1;min-width:160px;max-width:260px">
-            <option value="all">Todos los partidos</option>
-          </select>
-          <button class="btn btn-sm" onclick="document.getElementById('date-filter').value='all';renderMatches()">
-            <i class="ti ti-x"></i> Limpiar
-          </button>
-        </div>
+      <!-- Navegación por día -->
+      <div class="card mq-daypicker" style="margin-bottom:1rem;padding:10px 12px">
+        <button class="btn btn-sm btn-icon" onclick="stepDay(-1)" title="Día anterior"><i class="ti ti-chevron-left"></i></button>
+        <select id="date-filter" onchange="renderMatches()">
+          <option value="all">Todos los partidos</option>
+        </select>
+        <button class="btn btn-sm btn-icon" onclick="stepDay(1)" title="Día siguiente"><i class="ti ti-chevron-right"></i></button>
       </div>
 
       <div id="matches-list"></div>
@@ -109,8 +108,14 @@
 
     <!-- TABLA TAB -->
     <div id="tab-tabla" class="tab-content hidden">
+      <div id="tabla-rank" style="margin-bottom:1rem"></div>
       <div class="stat-grid" id="tabla-stats"></div>
-      <div class="card">
+    </div>
+
+    <!-- STATS TAB -->
+    <div id="tab-stats" class="tab-content hidden">
+      <div id="stats-highlights" class="stat-grid" style="margin-bottom:1rem"></div>
+      <div class="card" style="margin-bottom:1rem">
         <div class="section-title">Tabla de posiciones</div>
         <div class="table-wrapper">
           <table>
@@ -128,23 +133,15 @@
           </table>
         </div>
       </div>
-    </div>
-
-    <!-- STATS TAB -->
-    <div id="tab-stats" class="tab-content hidden">
-      <div class="card" style="margin-bottom:1rem">
-        <div class="section-title">Quinielas comparadas</div>
-        <div id="all-picks-container"></div>
-      </div>
       <div class="card">
-        <div class="section-title">Rendimiento por participante</div>
+        <div class="section-title">Precisión por participante</div>
         <div class="table-wrapper">
           <table>
             <thead>
               <tr>
                 <th>Jugador</th>
                 <th class="text-right">% Exactos</th>
-                <th class="text-right">% Acertado</th>
+                <th class="text-right">% Aciertos</th>
                 <th class="text-right">Racha</th>
               </tr>
             </thead>
@@ -156,24 +153,12 @@
 
     <!-- COMPARAR TAB -->
     <div id="tab-comparar" class="tab-content hidden">
-      <div class="card" style="margin-bottom:1rem">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <div class="section-title" style="margin:0"><i class="ti ti-eye"></i> Quinielas por partido</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
-            <button class="btn btn-sm filter-btn active" onclick="filterComparar('all',this)">Todos</button>
-            <button class="btn btn-sm filter-btn" onclick="filterComparar('pending',this)">Por jugar</button>
-            <button class="btn btn-sm filter-btn" onclick="filterComparar('done',this)">Finalizados</button>
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:0.5px solid var(--border)">
-          <span style="font-size:13px;color:var(--text-secondary);white-space:nowrap"><i class="ti ti-calendar-search"></i> Filtrar por fecha:</span>
-          <select id="comparar-date-filter" onchange="renderComparar(_compararFilter)" style="flex:1;min-width:160px;max-width:260px">
-            <option value="all">Todas las fechas</option>
-          </select>
-          <button class="btn btn-sm" onclick="document.getElementById('comparar-date-filter').value='all';renderComparar(_compararFilter)" title="Ver todas las fechas">
-            <i class="ti ti-x"></i> Limpiar
-          </button>
-        </div>
+      <div class="card mq-daypicker" style="margin-bottom:1rem;padding:10px 12px">
+        <button class="btn btn-sm btn-icon" onclick="stepCmpDay(-1)" title="Día anterior"><i class="ti ti-chevron-left"></i></button>
+        <select id="cmp-date-filter" onchange="renderComparar()">
+          <option value="all">Todos los partidos</option>
+        </select>
+        <button class="btn btn-sm btn-icon" onclick="stepCmpDay(1)" title="Día siguiente"><i class="ti ti-chevron-right"></i></button>
       </div>
       <div id="comparar-list"></div>
     </div>

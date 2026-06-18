@@ -126,6 +126,29 @@ function countryFlag(teamName) {
   return '';
 }
 
+// ─── Banderas (imagen, estilo Villasol) ───────────────────────────────────────
+// Nombres tal como vienen de openfootball → código ISO para flagcdn.com
+const TEAM_FLAGS = {
+  'Algeria':'dz','Argentina':'ar','Australia':'au','Austria':'at','Belgium':'be',
+  'Bosnia & Herzegovina':'ba','Brazil':'br','Canada':'ca','Cape Verde':'cv',
+  'Colombia':'co','Croatia':'hr','Curaçao':'cw','Czech Republic':'cz',
+  'DR Congo':'cd','Ecuador':'ec','Egypt':'eg','England':'gb-eng','France':'fr',
+  'Germany':'de','Ghana':'gh','Haiti':'ht','Iran':'ir','Iraq':'iq',
+  'Ivory Coast':'ci','Japan':'jp','Jordan':'jo','Mexico':'mx','Morocco':'ma',
+  'Netherlands':'nl','New Zealand':'nz','Norway':'no','Panama':'pa',
+  'Paraguay':'py','Portugal':'pt','Qatar':'qa','Saudi Arabia':'sa',
+  'Scotland':'gb-sct','Senegal':'sn','South Africa':'za','South Korea':'kr',
+  'Spain':'es','Sweden':'se','Switzerland':'ch','Tunisia':'tn','Turkey':'tr',
+  'USA':'us','Uruguay':'uy','Uzbekistan':'uz'
+};
+function flagImg(team, cls = 'flag') {
+  const c = TEAM_FLAGS[team];
+  const w = cls === 'flag' ? 'w40' : 'w80';
+  return c
+    ? `<img class="${cls}" src="https://flagcdn.com/${w}/${c}.png" alt="" loading="lazy">`
+    : `<span class="${cls} flag-tbd"><i class="ti ti-star"></i></span>`;
+}
+
 function colorFor(name) {
   let h = 0;
   for (let c of name) h = (h * 31 + c.charCodeAt(0)) % COLORS.length;
@@ -271,8 +294,7 @@ function refreshAll() {
   renderMatches();
   renderTabla();
   renderStats();
-  populateCompararDateFilter();
-  renderComparar(_compararFilter);
+  renderComparar();
   renderAdminMatches();
   renderAdminUsers();
   const elExact  = document.getElementById('pts-exact');
@@ -282,8 +304,6 @@ function refreshAll() {
 }
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
-let _compararFilter = 'all';
-
 function showTab(id, btn) {
   ['tab-quiniela','tab-tabla','tab-stats','tab-comparar','tab-admin'].forEach(t => {
     document.getElementById(t).classList.add('hidden');
@@ -291,34 +311,37 @@ function showTab(id, btn) {
   document.getElementById(id).classList.remove('hidden');
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   if (btn) btn.classList.add('active');
-  if (id === 'tab-comparar') {
-    populateCompararDateFilter();
-    renderComparar(_compararFilter);
-  }
+  if (id === 'tab-comparar') renderComparar();
 }
+function toggleCmpCard(id)  { document.getElementById('cmpc-' + id)?.classList.toggle('open'); }
+function toggleCmpGroup(key) { document.getElementById('cmpg-' + key)?.classList.toggle('open'); }
 
-function populateCompararDateFilter() {
-  const sel = document.getElementById('comparar-date-filter');
+// Llena el selector de días de Comparar (autoselecciona hoy)
+function populateCmpDates() {
+  const sel = document.getElementById('cmp-date-filter');
   if (!sel) return;
   const today = getTodayGuatemala();
   const dates = [...new Set(
     state.matches.map(m => m.datetime ? m.datetime.slice(0,10) : null).filter(Boolean)
   )].sort();
   const current = sel.value;
-  sel.innerHTML = '<option value="all">Todas las fechas</option>';
+  sel.innerHTML = '<option value="all">Todos los partidos</option>';
   dates.forEach(d => {
-    const dt = new Date(d + 'T12:00:00');
-    const label = dt.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
     const o = document.createElement('option');
     o.value = d;
-    o.textContent = (d === today ? '\u{1F4C5} Hoy \u2014 ' : '') + label.charAt(0).toUpperCase() + label.slice(1);
+    o.textContent = (d === today ? '\u{1F4C5} Hoy \u2014 ' : '') + formatDayLabel(d);
     sel.appendChild(o);
   });
-  if (current && current !== 'all') {
-    sel.value = current;
-  } else {
-    if (dates.includes(today)) sel.value = today;
-  }
+  if (current && current !== 'all') sel.value = current;
+  else if (dates.includes(today)) sel.value = today;
+}
+function stepCmpDay(dir) {
+  const sel = document.getElementById('cmp-date-filter');
+  if (!sel) return;
+  const opts = [...sel.options].map(o => o.value);
+  const i = Math.max(0, Math.min(opts.length - 1, opts.indexOf(sel.value) + dir));
+  sel.value = opts[i];
+  renderComparar();
 }
 
 
@@ -475,6 +498,21 @@ function populateDateFilter() {
   }
 }
 
+function formatDayLabel(d) {
+  const dt = new Date(d + 'T12:00:00');
+  const s = dt.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+// Mueve la selección entre días disponibles (‹ ›) en Mi quiniela
+function stepDay(dir) {
+  const sel = document.getElementById('date-filter');
+  if (!sel) return;
+  const opts = [...sel.options].map(o => o.value);
+  const i = Math.max(0, Math.min(opts.length - 1, opts.indexOf(sel.value) + dir));
+  sel.value = opts[i];
+  renderMatches();
+}
+
 // ─── Render: Matches ─────────────────────────────────────────────────────────
 function renderMatches() {
   const container = document.getElementById('matches-list');
@@ -506,17 +544,23 @@ function renderMatches() {
     return;
   }
 
+  const dayLabel = dateFilter === 'all' ? 'Todos los partidos' : formatDayLabel(dateFilter);
   const phases = [...new Set(filteredMatches.map(m => m.phase))];
   let html = '';
 
   phases.forEach(phase => {
     const ms = filteredMatches.filter(m => m.phase === phase);
-    html += `<div class="phase-group"><div class="card"><div class="phase-header">${phase}</div>`;
+    html += `<div class="mq-board">
+      <div class="mq-board-head">
+        <span class="mq-phase">${phase}</span>
+        <span class="mq-day">${dayLabel}</span>
+      </div>`;
 
     ms.forEach(m => {
       const locked = isLocked(m);
       const pick = state.picks[editUser.id]?.[m.id] || { home: '', away: '' };
       const resultKnown = m.result && m.result.home !== '' && m.result.away !== '';
+      const np = normPick(pick);
 
       let statusBadge = '';
       if (resultKnown) {
@@ -529,40 +573,34 @@ function renderMatches() {
           statusBadge = `<span class="badge badge-gray">+0</span>`;
       }
 
-      const dt = new Date(m.datetime);
-      const dtStr = dt.toLocaleDateString('es', { weekday: 'short', month: 'short', day: 'numeric' })
-        + ' ' + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+      const timeStr = new Date(m.datetime).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
 
-      const inputsOrPick = locked || resultKnown
-        ? `<span style="font-size:14px;font-weight:600;min-width:64px;text-align:center;color:var(--text-secondary)">
-             ${pickSet(pick) ? pick.home + ' – ' + pick.away : '– –'}
-           </span>`
-        : `<input type="number" min="0" max="20" class="score-input" value="${pick.home}"
-             placeholder="0" onchange="setPick('${editUser.id}','${m.id}','home',this.value)">
-           <span class="score-sep">–</span>
-           <input type="number" min="0" max="20" class="score-input" value="${pick.away}"
-             placeholder="0" onchange="setPick('${editUser.id}','${m.id}','away',this.value)">`;
+      const center = locked || resultKnown
+        ? `<div class="mq-final">${pickSet(pick) ? `${np.home}<span>–</span>${np.away}` : `<span style="opacity:.5">– –</span>`}</div>`
+        : `<div class="mq-inputs">
+             <input type="number" min="0" max="20" class="score-input" value="${pick.home}" placeholder="0"
+               onfocus="this.select()" onchange="setPick('${editUser.id}','${m.id}','home',this.value)">
+             <span class="score-sep">–</span>
+             <input type="number" min="0" max="20" class="score-input" value="${pick.away}" placeholder="0"
+               onfocus="this.select()" onchange="setPick('${editUser.id}','${m.id}','away',this.value)">
+           </div>`;
 
-      const flagHome = countryFlag(m.home);
-      const flagAway = countryFlag(m.away);
-      html += `<div class="match-row">
-        <div class="match-teams">
-          <div class="match-teams-row">
-            <span class="team-name right">${flagHome ? `<span class="team-flag">${flagHome}</span> ` : ''}${m.home}</span>
-            ${inputsOrPick}
-            <span class="team-name">${m.away}${flagAway ? ` <span class="team-flag">${flagAway}</span>` : ''}</span>
-          </div>
-          <div class="match-meta">
-            <span>${dtStr}</span>
-            ${locked ? `<span class="badge badge-warning"><i class="ti ti-lock"></i> bloqueado</span>` : ''}
-            ${resultKnown ? `<span class="badge badge-gray">${m.result.home}–${m.result.away}</span>` : ''}
-            ${statusBadge}
-          </div>
+      html += `<div class="mq-card">
+        <div class="mq-fixture">
+          <div class="mq-team">${flagImg(m.home, 'flag-lg')}<span class="mq-name">${m.home}</span></div>
+          ${center}
+          <div class="mq-team">${flagImg(m.away, 'flag-lg')}<span class="mq-name">${m.away}</span></div>
+        </div>
+        <div class="mq-foot">
+          <span class="mq-time"><i class="ti ti-clock"></i> ${timeStr}</span>
+          ${locked && !resultKnown ? `<span class="badge badge-warning"><i class="ti ti-lock"></i> bloqueado</span>` : ''}
+          ${resultKnown ? `<span class="badge badge-gray">Final ${m.result.home}–${m.result.away}</span>` : ''}
+          ${statusBadge}
         </div>
       </div>`;
     });
 
-    html += '</div></div>';
+    html += '</div>';
   });
 
   container.innerHTML = html;
@@ -576,10 +614,28 @@ async function setPick(userId, matchId, side, val) {
 }
 
 // ─── Render: Tabla ───────────────────────────────────────────────────────────
+// Ranking compacto (medallas + puntos). Reutilizable.
+function rankingHtml() {
+  if (!state.users.length) return '';
+  const rows = getTableData().map((d, i) => {
+    const color = colorFor(d.user.name);
+    const pos = i < 3 ? ['🥇','🥈','🥉'][i] : (i + 1);
+    return '<div class="cmp-rank-row">'
+      + '<span class="cmp-rank-pos">' + pos + '</span>'
+      + '<span class="cmp-avatar" style="background:' + color + '30;color:' + color + '">' + initials(d.user.name) + '</span>'
+      + '<span class="cmp-rank-name">' + d.user.name.split(' ')[0] + '</span>'
+      + '<span class="cmp-rank-pts">' + d.pts + '<small> pts</small></span>'
+      + '</div>';
+  }).join('');
+  return '<div class="cmp-rank"><div class="cmp-rank-head"><i class="ti ti-trophy"></i> Ranking general</div>' + rows + '</div>';
+}
+
 function renderTabla() {
-  if (!document.getElementById('tabla-body')) return;
-  const data = getTableData();
+  const rankEl = document.getElementById('tabla-rank');
+  if (!rankEl) return;
   const totalPlayed = state.matches.filter(m => m.result && m.result.home !== '').length;
+
+  rankEl.innerHTML = rankingHtml();
 
   document.getElementById('tabla-stats').innerHTML = `
     <div class="stat-card"><div class="stat-label">Partidos jugados</div><div class="stat-value">${totalPlayed}</div></div>
@@ -589,8 +645,25 @@ function renderTabla() {
     <div class="stat-card"><div class="stat-label">Pts por ganador</div><div class="stat-value">${state.points.result}</div></div>
     <div class="stat-card"><div class="stat-label">Bonos</div><div class="stat-value">+1 +1</div></div>
   `;
+}
 
+// ─── Render: Stats ───────────────────────────────────────────────────────────
+// Empates predichos por un jugador (sobre todas sus quinielas)
+function countDraws(userId) {
+  let d = 0;
+  state.matches.forEach(m => {
+    const pk = state.picks[userId]?.[m.id];
+    if (pickSet(pk)) { const np = normPick(pk); if (+np.home === +np.away) d++; }
+  });
+  return d;
+}
+
+function renderStats() {
+  if (!document.getElementById('stats-body')) return;
+  const data = getTableData();
   const medals = ['🥇', '🥈', '🥉'];
+
+  // Tabla de posiciones
   document.getElementById('tabla-body').innerHTML = data.map((d, i) => {
     const color = colorFor(d.user.name);
     return `<tr>
@@ -608,17 +681,12 @@ function renderTabla() {
       <td class="text-right" style="color:var(--text-secondary)">${d.played}</td>
     </tr>`;
   }).join('');
-}
 
-// ─── Render: Stats ───────────────────────────────────────────────────────────
-function renderStats() {
-  if (!document.getElementById('stats-body')) return;
-  const data = getTableData();
-
+  // Precisión por participante
   document.getElementById('stats-body').innerHTML = data.map(d => {
     const total = d.played;
-    const pctExact  = total > 0 ? Math.round(d.exact / total * 100) : 0;
-    const pctResult = total > 0 ? Math.round((d.exact + d.winner) / total * 100) : 0;
+    const pctExact = total > 0 ? Math.round(d.exact / total * 100) : 0;
+    const pctHits  = total > 0 ? Math.round((d.exact + d.winner) / total * 100) : 0;
     const streak = getStreak(d.user.id);
     const color = colorFor(d.user.name);
     return `<tr>
@@ -629,7 +697,7 @@ function renderStats() {
         </div>
       </td>
       <td class="text-right"><strong>${pctExact}%</strong></td>
-      <td class="text-right">${pctResult}%</td>
+      <td class="text-right">${pctHits}%</td>
       <td class="text-right">
         ${streak > 0
           ? `<span class="badge badge-success">🔥 ${streak}</span>`
@@ -640,34 +708,28 @@ function renderStats() {
     </tr>`;
   }).join('');
 
-  const played = state.matches.filter(m => m.result && m.result.home !== '');
-  if (played.length === 0) {
-    document.getElementById('all-picks-container').innerHTML =
-      '<p style="font-size:13px;color:var(--text-secondary);padding:1rem 0">Aún no hay partidos con resultado.</p>';
-    return;
-  }
-
-  let html = '<div class="table-wrapper"><table><thead><tr><th>Partido</th><th>Real</th>';
-  state.users.forEach(u => html += `<th style="text-align:center">${initials(u.name)}</th>`);
-  html += '</tr></thead><tbody>';
-
-  played.forEach(m => {
-    html += `<tr>
-      <td style="font-size:12px;white-space:nowrap">${m.home} vs ${m.away}</td>
-      <td><span class="badge badge-gray">${m.result.home}–${m.result.away}</span></td>`;
-    state.users.forEach(u => {
-      const pick = state.picks[u.id]?.[m.id];
-      const pts = calcPoints(u.id, m);
-      const np2 = normPick(pick); const pickStr = pickSet(pick) ? `${np2.home}–${np2.away}` : '–';
-      const cls = pts === state.points.exact ? 'badge-success'
-                : pts > 0 ? 'badge-info' : 'badge-gray';
-      html += `<td style="text-align:center"><span class="badge ${cls}">${pickStr}</span></td>`;
-    });
-    html += '</tr>';
-  });
-
-  html += '</tbody></table></div>';
-  document.getElementById('all-picks-container').innerHTML = html;
+  // Destacados (mejores) — sin sección "De la Verga"
+  const arr = data.map(d => ({
+    name: d.user.name.split(' ')[0],
+    aciertos: d.exact + d.winner,
+    draws: countDraws(d.user.id),
+    played: d.played,
+    pct: d.played > 0 ? Math.round((d.exact + d.winner) / d.played * 100) : 0
+  }));
+  const playedArr = arr.filter(x => x.played > 0);
+  const maxBy = (pool, k) => pool.length ? pool.reduce((b, x) => x[k] > b[k] ? x : b) : null;
+  const ifPos = (w, k) => (w && w[k] > 0) ? w : null;
+  const statCard = (label, w, fmt) =>
+    `<div class="stat-card">
+      <div class="stat-label">${label}</div>
+      <div class="stat-value" style="font-size:20px">${w ? w.name : '—'}</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">${w ? fmt(w) : 'Aún sin datos'}</div>
+    </div>`;
+  const hl = document.getElementById('stats-highlights');
+  if (hl) hl.innerHTML =
+      statCard('Quién acierta más', ifPos(maxBy(playedArr, 'aciertos'), 'aciertos'), w => w.aciertos + ' aciertos')
+    + statCard('Rey del empate',    ifPos(maxBy(arr, 'draws'), 'draws'),             w => w.draws + ' empates predichos')
+    + statCard('Mejor precisión',   ifPos(maxBy(playedArr, 'pct'), 'pct'),           w => w.pct + '% de aciertos');
 }
 
 // ─── Render: Admin Matches ───────────────────────────────────────────────────
@@ -1013,97 +1075,134 @@ async function syncResults() {
 
 
 // ─── Render: Comparar ────────────────────────────────────────────────────────
-function filterComparar(filter, btn) {
-  _compararFilter = filter;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  renderComparar(filter);
-}
+function renderComparar() {
+  const listEl = document.getElementById('comparar-list');
+  if (!listEl) return;
 
-function renderComparar(filter = 'all') {
-  const container = document.getElementById('comparar-list');
-  if (!container) return;
-
+  // Partidos por día (hoy por defecto)
+  populateCmpDates();
+  const dayFilter = document.getElementById('cmp-date-filter')?.value || 'all';
   let matches = [...state.matches].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
-
-  // Filtro por fecha (Comparar)
-  const dateFilterEl = document.getElementById('comparar-date-filter');
-  const dateVal = dateFilterEl ? dateFilterEl.value : 'all';
-  if (dateVal && dateVal !== 'all') {
-    matches = matches.filter(m => m.datetime && m.datetime.slice(0,10) === dateVal);
-  }
-
-  if (filter === 'pending') matches = matches.filter(m => !m.result || m.result.home === '');
-  if (filter === 'done')    matches = matches.filter(m => m.result && m.result.home !== '');
+  if (dayFilter !== 'all') matches = matches.filter(m => m.datetime && m.datetime.slice(0, 10) === dayFilter);
 
   if (matches.length === 0) {
-    container.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-secondary)">No hay partidos en esta categoría.</div>';
+    listEl.innerHTML = '<div class="cmp-empty">No hay partidos para este día. Usa ‹ › para ver otro día.</div>';
     return;
   }
 
-  const phases = [...new Set(matches.map(m => m.phase))];
-  let html = '';
-
-  phases.forEach(phase => {
-    const ms = matches.filter(m => m.phase === phase);
-    html += `<div class="phase-group"><div class="card"><div class="phase-header">${phase}</div>`;
-
-    ms.forEach((m, idx) => {
-      const hasResult = m.result && m.result.home !== '';
-      const locked = isLocked(m);
-      const dt = new Date(m.datetime);
-      const dtStr = dt.toLocaleDateString('es', { weekday: 'short', month: 'short', day: 'numeric' })
-        + ' ' + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
-      const isLast = idx === ms.length - 1;
-
-      // Build user picks HTML separately to avoid template nesting issues
-      let picksHtml = '';
-      state.users.forEach(u => {
-        const pick = state.picks[u.id]?.[m.id];
-        const hasPick = pickSet(pick);
-        const color = colorFor(u.name);
-        let badgeCls = 'badge-gray';
-        let pts = 0;
-        if (hasResult && hasPick) {
-          pts = calcPoints(u.id, m);
-          if (pts === state.points.exact) badgeCls = 'badge-success';
-          else if (pts > 0) badgeCls = 'badge-purple';
-          else badgeCls = 'badge-danger';
-        }
-        const np3 = normPick(pick); const pickStr = hasPick ? np3.home + '–' + np3.away : '–';
-        const ptsStr  = hasResult && hasPick ? ' · +' + pts : '';
-        picksHtml += '<div style="display:flex;align-items:center;gap:6px;background:var(--bg-secondary);border-radius:var(--radius);padding:5px 10px">'
-          + '<div class="avatar" style="width:22px;height:22px;font-size:9px;background:' + color + '30;color:' + color + ';flex-shrink:0">' + initials(u.name) + '</div>'
-          + '<span style="font-size:12px;font-weight:500">' + u.name.split(' ')[0] + '</span>'
-          + '<span class="badge ' + badgeCls + '" style="font-size:11px">' + pickStr + ptsStr + '</span>'
-          + '</div>';
-      });
-
-      const statusBadge = hasResult
-        ? '<span class="badge badge-success">Resultado: ' + m.result.home + '–' + m.result.away + '</span>'
-        : locked
-        ? '<span class="badge badge-warning"><i class="ti ti-lock"></i> En curso</span>'
-        : '<span class="badge badge-gray">Por jugar</span>';
-
-      html += '<div style="padding:12px 0;' + (isLast ? '' : 'border-bottom:0.5px solid var(--border)') + '">'
-        + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">'
-        + '<span style="font-weight:600;font-size:14px">' + m.home + '</span>'
-        + '<span style="color:var(--text-secondary);font-size:12px">vs</span>'
-        + '<span style="font-weight:600;font-size:14px">' + m.away + '</span>'
-        + '<span style="flex:1"></span>'
-        + '<span style="font-size:11px;color:var(--text-secondary)">' + dtStr + '</span>'
-        + statusBadge
-        + '</div>'
-        + '<div style="display:flex;flex-wrap:wrap;gap:8px">'
-        + picksHtml
-        + '</div>'
-        + '</div>';
-    });
-
-    html += '</div></div>';
+  // Agrupados por estado: finalizados / en curso / pendientes
+  const groups = { done: [], live: [], pend: [] };
+  matches.forEach(m => {
+    if (m.result && m.result.home !== '') groups.done.push(m);
+    else if (isLocked(m)) groups.live.push(m);
+    else groups.pend.push(m);
   });
 
-  container.innerHTML = html;
+  const meta = {
+    done: { label: 'Finalizados', icon: 'ti-circle-check' },
+    live: { label: 'En curso',    icon: 'ti-ball-football' },
+    pend: { label: 'Pendientes',  icon: 'ti-clock' }
+  };
+  const order = ['done', 'live', 'pend'];
+  const firstVisible = order.find(k => groups[k].length);
+
+  let html = '';
+  order.forEach(key => {
+    const ms = groups[key];
+    if (!ms.length) return;
+    const open = key === 'done' || (!groups.done.length && key === firstVisible);
+    html += '<div class="cmp-group' + (open ? ' open' : '') + '" id="cmpg-' + key + '">'
+      + '<button class="cmp-group-head" onclick="toggleCmpGroup(\'' + key + '\')">'
+      + '<i class="ti ' + meta[key].icon + ' cmp-group-icon"></i>'
+      + '<span class="cmp-group-title">' + meta[key].label + '</span>'
+      + '<span class="cmp-group-count">' + ms.length + '</span>'
+      + '<i class="ti ti-chevron-down cmp-chev"></i>'
+      + '</button>'
+      + '<div class="cmp-group-wrap"><div class="cmp-group-body">'
+      + ms.map(cmpCard).join('')
+      + '</div></div></div>';
+  });
+
+  listEl.innerHTML = html;
+}
+
+// Tarjeta colapsable de un partido
+function cmpCard(m) {
+  const hasResult = m.result && m.result.home !== '';
+  const meId = state.currentUser?.id;
+
+  // Clasifica puntos al estilo Pitaya (exacto / acierta ganador+bonos / falla)
+  const badgeFor = pts => pts === state.points.exact ? 'badge-success' : pts > 0 ? 'badge-purple' : 'badge-danger';
+
+  // Ganadores (mayor puntuación)
+  let winnersHtml = '';
+  if (hasResult) {
+    const scored = state.users
+      .filter(u => pickSet(state.picks[u.id]?.[m.id]))
+      .map(u => ({ u, pts: calcPoints(u.id, m) }));
+    const max = scored.reduce((mx, s) => Math.max(mx, s.pts), 0);
+    const winners = max > 0 ? scored.filter(s => s.pts === max) : [];
+    winnersHtml = winners.length
+      ? winners.map(s => '<span class="cmp-win">🥇 ' + s.u.name.split(' ')[0]
+          + '<span class="badge-win">+' + s.pts + '</span></span>').join('')
+      : '<span class="cmp-noone">Nadie acertó este partido</span>';
+  }
+
+  // Mi predicción
+  const myPick = meId ? state.picks[meId]?.[m.id] : null;
+  const myHas = pickSet(myPick);
+  const myNp = normPick(myPick);
+  const myPts = hasResult && myHas ? calcPoints(meId, m) : null;
+  const mineStr = myHas
+    ? myNp.home + ' - ' + myNp.away + (myPts !== null ? ' <span class="cmp-mine-pts">(+' + myPts + ')</span>' : '')
+    : '<span class="cmp-noone">Sin predicción</span>';
+
+  // Detalle: todas las predicciones, ordenadas por puntos
+  const detailHtml = state.users
+    .map(u => {
+      const pk = state.picks[u.id]?.[m.id];
+      const has = pickSet(pk);
+      const np = normPick(pk);
+      const pts = hasResult && has ? calcPoints(u.id, m) : null;
+      return { u, has, np, pts };
+    })
+    .sort((a, b) => (b.pts ?? -1) - (a.pts ?? -1))
+    .map(r => {
+      const color = colorFor(r.u.name);
+      const pickStr = r.has ? r.np.home + '-' + r.np.away : '–';
+      const cls = r.pts !== null ? badgeFor(r.pts) : 'badge-gray';
+      return '<div class="cmp-pred' + (r.u.id === meId ? ' me' : '') + '">'
+        + '<span class="cmp-avatar" style="background:' + color + '30;color:' + color + '">' + initials(r.u.name) + '</span>'
+        + '<span class="cmp-pred-name">' + r.u.name.split(' ')[0] + '</span>'
+        + '<span class="cmp-pred-pick">' + pickStr + '</span>'
+        + '<span class="badge ' + cls + ' cmp-pred-badge">' + (r.pts !== null ? '+' + r.pts : '·') + '</span>'
+        + '</div>';
+    }).join('');
+
+  const dt = new Date(m.datetime);
+  const center = hasResult
+    ? '<span class="cmp-score">' + m.result.home + ' - ' + m.result.away + '</span>'
+    : '<span class="cmp-vs">vs</span>';
+  const subline = hasResult
+    ? 'Resultado final'
+    : dt.toLocaleDateString('es', { day: 'numeric', month: 'short' }) + ' · '
+      + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+
+  return '<div class="cmp-card" id="cmpc-' + m.id + '">'
+    + '<div class="cmp-fixture">'
+    +   '<span class="cmp-team home">' + m.home + ' ' + flagImg(m.home) + '</span>'
+    +   center
+    +   '<span class="cmp-team away">' + flagImg(m.away) + ' ' + m.away + '</span>'
+    + '</div>'
+    + '<div class="cmp-subline">' + subline + '</div>'
+    + (winnersHtml ? '<div class="cmp-winners">' + winnersHtml + '</div>' : '')
+    + '<div class="cmp-mine"><span class="cmp-mine-label">⭐ Tu predicción</span>'
+    +   '<span class="cmp-mine-val">' + mineStr + '</span></div>'
+    + '<button class="cmp-toggle" onclick="toggleCmpCard(\'' + m.id + '\')">'
+    +   '<span class="cmp-toggle-label"></span><i class="ti ti-chevron-down cmp-chev"></i>'
+    + '</button>'
+    + '<div class="cmp-detail-wrap"><div class="cmp-detail">' + detailHtml + '</div></div>'
+    + '</div>';
 }
 
 // ─── Verificar horarios contra openfootball ──────────────────────────────────
