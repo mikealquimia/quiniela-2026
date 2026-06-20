@@ -1,0 +1,251 @@
+/* ============================================================
+   PITAYA BUDDY — mascota asistente animada
+   ============================================================ */
+
+:root {
+  --pitaya-accent: #e91e83;
+  --pitaya-green: #5ec26a;
+}
+
+#pitaya-buddy {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60; /* debajo de modales (100) pero arriba del contenido */
+  width: var(--pb-size, 140px);
+  height: calc(var(--pb-size, 140px) * var(--pb-aspect, 1.627));
+  pointer-events: none;
+  will-change: transform;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+#pitaya-buddy.pb-interactive {
+  pointer-events: auto;
+}
+
+#pitaya-buddy .pb-shadow {
+  position: absolute;
+  bottom: -4%;
+  left: 50%;
+  width: 62%;
+  height: 10%;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 72%);
+  border-radius: 50%;
+  transform: translateX(-50%);
+  transition: opacity 0.2s ease;
+}
+
+#pitaya-buddy .pb-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+#pitaya-buddy .pb-body-wrap {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 92%;
+}
+
+#pitaya-buddy .pb-sprite {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 6px 10px rgba(0,0,0,0.25));
+  transform-origin: 50% 92%;
+}
+
+/* La carita (overlay SVG) se posiciona encima del sprite, alineada a sus coordenadas faciales */
+#pitaya-buddy .pb-face {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  transform-origin: 50% 92%;
+}
+
+#pitaya-buddy .pb-face svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ---------- Idle: balanceo respirando ---------- */
+@keyframes pb-idle-breathe {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  50% { transform: translateY(-1.5%) scale(1.01, 0.99); }
+}
+.pb-state-idle .pb-body-wrap {
+  animation: pb-idle-breathe 2.6s ease-in-out infinite;
+}
+
+/* ---------- Caminando ---------- */
+@keyframes pb-walk-bob {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  25% { transform: translateY(-6%) rotate(0deg); }
+  50% { transform: translateY(0) rotate(2deg); }
+  75% { transform: translateY(-6%) rotate(0deg); }
+}
+.pb-state-walking .pb-body-wrap {
+  animation: pb-walk-bob 0.55s ease-in-out infinite;
+}
+.pb-state-walking .pb-shadow {
+  animation: pb-walk-shadow 0.55s ease-in-out infinite;
+}
+@keyframes pb-walk-shadow {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.35; }
+  50% { transform: translateX(-50%) scale(0.82); opacity: 0.22; }
+}
+
+/* Voltear horizontalmente según dirección */
+#pitaya-buddy[data-dir="left"] .pb-body-wrap,
+#pitaya-buddy[data-dir="left"] .pb-face {
+  transform: scaleX(-1);
+}
+
+/* ---------- Click / festejo ---------- */
+@keyframes pb-celebrate {
+  0% { transform: translateY(0) rotate(0deg) scale(1); }
+  20% { transform: translateY(-32%) rotate(-8deg) scale(1.05); }
+  40% { transform: translateY(0) rotate(6deg) scale(0.97); }
+  60% { transform: translateY(-14%) rotate(-4deg) scale(1.02); }
+  80% { transform: translateY(0) rotate(2deg) scale(1); }
+  100% { transform: translateY(0) rotate(0deg) scale(1); }
+}
+.pb-anim-celebrate .pb-body-wrap {
+  animation: pb-celebrate 0.85s cubic-bezier(.34,1.56,.64,1);
+}
+
+@keyframes pb-wave {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-6deg); }
+  75% { transform: rotate(6deg); }
+}
+.pb-anim-wave .pb-body-wrap {
+  animation: pb-wave 0.6s ease-in-out 2;
+}
+
+@keyframes pb-spin {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+.pb-anim-spin .pb-body-wrap {
+  animation: pb-spin 0.7s ease-in-out;
+}
+
+@keyframes pb-shy {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  30% { transform: translateY(2%) rotate(-3deg); }
+  60% { transform: translateY(2%) rotate(3deg); }
+}
+.pb-anim-shy .pb-body-wrap {
+  animation: pb-shy 0.6s ease-in-out;
+}
+
+/* ---------- Drag (mobile reposicionar) ---------- */
+.pb-dragging {
+  transition: none !important;
+}
+.pb-dragging .pb-body-wrap {
+  animation: none !important;
+  transform: scale(1.06) rotate(-4deg) !important;
+}
+.pb-dragging .pb-shadow {
+  opacity: 0.15;
+}
+
+/* ---------- Globo de dialogo ---------- */
+#pitaya-buddy .pb-bubble {
+  position: absolute;
+  bottom: 102%;
+  left: 50%;
+  transform: translateX(calc(-50% + var(--bubble-shift, 0px))) translateY(6px) scale(0.9);
+  background: #ffffff;
+  color: #1c1c1c;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  padding: 9px 13px;
+  border-radius: 14px;
+  min-width: 120px;
+  max-width: 220px;
+  width: max-content;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  text-align: center;
+}
+#pitaya-buddy .pb-bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: calc(50% - var(--bubble-shift, 0px));
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: #ffffff;
+}
+#pitaya-buddy .pb-bubble.pb-bubble-visible {
+  opacity: 1;
+  transform: translateX(calc(-50% + var(--bubble-shift, 0px))) translateY(0) scale(1);
+}
+#pitaya-buddy[data-dir="left"] .pb-bubble {
+  /* el bubble nunca se voltea aunque el sprite si */
+  transform: translateX(calc(-50% + var(--bubble-shift, 0px))) translateY(6px) scale(0.9);
+}
+#pitaya-buddy[data-dir="left"] .pb-bubble.pb-bubble-visible {
+  transform: translateX(calc(-50% + var(--bubble-shift, 0px))) translateY(0) scale(1);
+}
+
+@media (prefers-color-scheme: dark) {
+  #pitaya-buddy .pb-bubble {
+    background: #1d2d47;
+    color: #e8eef6;
+  }
+  #pitaya-buddy .pb-bubble::after {
+    border-top-color: #1d2d47;
+  }
+}
+
+/* ---------- Boton reubicar (mobile) ---------- */
+#pitaya-buddy .pb-relocate-hint {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 22px;
+  height: 22px;
+  background: var(--pitaya-accent);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+#pitaya-buddy.pb-show-hint .pb-relocate-hint {
+  display: flex;
+}
+#pitaya-buddy .pb-relocate-hint svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  #pitaya-buddy .pb-body-wrap,
+  #pitaya-buddy .pb-shadow {
+    animation: none !important;
+  }
+}
+
+.pb-hidden-mascot {
+  display: none !important;
+}
