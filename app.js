@@ -366,6 +366,24 @@ function isLocked(match) {
   return Date.now() >= new Date(match.datetime).getTime() - 60 * 60 * 1000;
 }
 
+// "En vivo": desde la hora de inicio y durante las 2h típicas de un partido,
+// mientras no se haya cargado el resultado final.
+function isLive(match) {
+  if (!match.datetime) return false;
+  if (match.result && match.result.home !== '') return false;
+  const start = new Date(match.datetime).getTime();
+  const now = Date.now();
+  return now >= start && now < start + 2 * 60 * 60 * 1000; // ponytail: 2h fija
+}
+
+// Ganador por penales en un empate: 'H' | 'A' | null (si no hay penales o están empatados)
+function penWinner(result) {
+  if (!result || !hasVal(result.penHome) || !hasVal(result.penAway)) return null;
+  const ph = parseInt(result.penHome), pa = parseInt(result.penAway);
+  if (ph === pa) return null;
+  return ph > pa ? 'H' : 'A';
+}
+
 function calcPoints(userId, match) {
   if (!match.result || match.result.home === '') return 0;
   const pick = state.picks[userId]?.[match.id];
@@ -378,7 +396,9 @@ function calcPoints(userId, match) {
   if (ph === rh && pa === ra) return state.points.exact;
 
   // Ganador correcto: 2 pts base
-  const rRes = rh > ra ? 'H' : rh < ra ? 'A' : 'D';
+  let rRes = rh > ra ? 'H' : rh < ra ? 'A' : 'D';
+  // Empate definido por penales: el ganador de penales es el ganador efectivo
+  if (rRes === 'D') rRes = penWinner(match.result) || 'D';
   const pRes = ph > pa ? 'H' : ph < pa ? 'A' : 'D';
   let pts = rRes === pRes ? state.points.result : 0;
 
@@ -593,8 +613,10 @@ function renderMatches() {
         </div>
         <div class="mq-foot">
           <span class="mq-time"><i class="ti ti-clock"></i> ${timeStr}</span>
-          ${locked && !resultKnown ? `<span class="badge badge-warning"><i class="ti ti-lock"></i> bloqueado</span>` : ''}
+          ${isLive(m) ? `<span class="badge badge-live"><i class="ti ti-broadcast"></i> EN VIVO</span>` : ''}
+          ${locked && !resultKnown && !isLive(m) ? `<span class="badge badge-warning"><i class="ti ti-lock"></i> bloqueado</span>` : ''}
           ${resultKnown ? `<span class="badge badge-gray">Final ${m.result.home}–${m.result.away}</span>` : ''}
+          ${resultKnown && penWinner(m.result) ? `<span class="badge badge-info">Pen ${m.result.penHome}–${m.result.penAway} · ${penWinner(m.result) === 'H' ? m.home : m.away} ✓</span>` : ''}
           ${statusBadge}
         </div>
       </div>`;
@@ -772,7 +794,8 @@ function renderAdminMatches() {
     const dt = new Date(m.datetime);
     const dtStr = dt.toLocaleDateString('es', { day: 'numeric', month: 'short' })
       + ' ' + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
-    const hasResult = m.result && m.result.home !== '';
+    const hasResult = m.result && m.result.home !== '' && m.result.away !== '';
+    const isDraw = hasResult && parseInt(m.result.home) === parseInt(m.result.away);
 
     return `<div class="admin-match-row">
       <span style="font-size:13px;flex:1;min-width:160px">
@@ -784,6 +807,12 @@ function renderAdminMatches() {
       <span class="score-sep">–</span>
       <input type="number" min="0" max="20" placeholder="V" value="${hasResult ? m.result.away : ''}"
         id="res-a-${m.id}" class="score-input">
+      ${isDraw ? `<span class="pen-label">Pen</span>
+      <input type="number" min="0" max="20" placeholder="L" value="${hasVal(m.result.penHome) ? m.result.penHome : ''}"
+        id="pen-h-${m.id}" class="score-input">
+      <span class="score-sep">–</span>
+      <input type="number" min="0" max="20" placeholder="V" value="${hasVal(m.result.penAway) ? m.result.penAway : ''}"
+        id="pen-a-${m.id}" class="score-input">` : ''}
       <button class="btn btn-sm btn-primary" onclick="saveResult('${m.id}')">
         <i class="ti ti-check"></i> Guardar
       </button>
@@ -802,7 +831,15 @@ async function saveResult(matchId) {
   const a = document.getElementById('res-a-' + matchId).value;
   const m = state.matches.find(x => x.id === matchId);
   if (!m) return;
-  m.result = { home: h, away: a };
+  const result = { home: h, away: a };
+  // Penales (solo si el partido es empate y se rendían los inputs)
+  const penH = document.getElementById('pen-h-' + matchId);
+  const penA = document.getElementById('pen-a-' + matchId);
+  if (penH && penA && penH.value !== '' && penA.value !== '') {
+    result.penHome = parseInt(penH.value);
+    result.penAway = parseInt(penA.value);
+  }
+  m.result = result;
   await saveState();
 }
 
@@ -1432,3 +1469,6 @@ initFirebase().catch(err => {
     <p>Asegúrate de haber reemplazado los valores de Firebase en <code>app.js</code>. Ver <code>README.md</code>.</p>
   </div>`;
 });
+
+// Refresca el estado "en vivo" de los partidos cada minuto.
+setInterval(() => { if (state.currentUser && state.editingAs) renderMatches(); }, 60000);

@@ -260,6 +260,9 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 .badge-warning { background: var(--warning-bg); color: var(--warning-text); }
 .badge-danger { background: var(--danger-bg); color: var(--danger-text); }
 .badge-gray { background: var(--bg-secondary); color: var(--text-secondary); }
+.badge-live { background: #e11d48; color: #fff; animation: livePulse 1.2s ease-in-out infinite; }
+@keyframes livePulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+.pen-label { font-size: 11px; color: var(--text-secondary); align-self: center; }
 
 /* ALERTS */
 .alert {
