@@ -366,14 +366,24 @@ function isLocked(match) {
   return Date.now() >= new Date(match.datetime).getTime() - 60 * 60 * 1000;
 }
 
-// "En vivo": desde la hora de inicio y durante las 2h típicas de un partido,
-// mientras no se haya cargado el resultado final.
+// "En vivo": desde la hora de inicio y durante las 2h típicas de un partido.
+// El marcador parcial no cancela el estado EN VIVO; solo lo cancela si el
+// admin marcó el partido como finalizado (m.finished === true).
 function isLive(match) {
   if (!match.datetime) return false;
-  if (match.result && match.result.home !== '') return false;
+  if (match.finished) return false;            // admin marcó como terminado
   const start = new Date(match.datetime).getTime();
   const now = Date.now();
-  return now >= start && now < start + 2 * 60 * 60 * 1000; // ponytail: 2h fija
+  return now >= start && now < start + 2 * 60 * 60 * 1000;
+}
+
+// Un partido muestra resultado "Final" solo si ya terminó la ventana EN VIVO
+// O si el admin lo marcó como finalizado explícitamente.
+function isFinished(match) {
+  if (match.finished) return true;
+  if (!match.datetime) return false;
+  const start = new Date(match.datetime).getTime();
+  return Date.now() >= start + 2 * 60 * 60 * 1000;
 }
 
 // Ganador por penales en un empate: 'H' | 'A' | null (si no hay penales o están empatados)
@@ -386,6 +396,7 @@ function penWinner(result) {
 
 function calcPoints(userId, match) {
   if (!match.result || match.result.home === '') return 0;
+  if (!isFinished(match)) return 0; // partido aún en vivo, no contar puntos todavía
   const pick = state.picks[userId]?.[match.id];
   if (!pickSet(pick)) return 0;
   const np = normPick(pick);
@@ -415,7 +426,7 @@ function getTableData() {
   return state.users.map(u => {
     let pts = 0, exact = 0, winner = 0, played = 0;
     state.matches.forEach(m => {
-      if (m.result && m.result.home !== '') {
+      if (m.result && m.result.home !== '' && isFinished(m)) {
         played++;
         const p = calcPoints(u.id, m);
         pts += p;
@@ -578,8 +589,12 @@ function renderMatches() {
 
     ms.forEach(m => {
       const locked = isLocked(m);
+      const live = isLive(m);
+      const finished = isFinished(m);
+      const hasResult = m.result && m.result.home !== '' && m.result.away !== '';
+      // "resultKnown" para puntos: solo cuando el partido terminó y hay resultado
+      const resultKnown = hasResult && finished;
       const pick = state.picks[editUser.id]?.[m.id] || { home: '', away: '' };
-      const resultKnown = m.result && m.result.home !== '' && m.result.away !== '';
       const np = normPick(pick);
 
       let statusBadge = '';
@@ -595,7 +610,7 @@ function renderMatches() {
 
       const timeStr = new Date(m.datetime).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
 
-      const center = locked || resultKnown
+      const center = locked || hasResult
         ? `<div class="mq-final">${pickSet(pick) ? `${np.home}<span>–</span>${np.away}` : `<span style="opacity:.5">– –</span>`}</div>`
         : `<div class="mq-inputs">
              <input type="number" min="0" max="20" class="score-input" value="${pick.home}" placeholder="0"
@@ -605,7 +620,12 @@ function renderMatches() {
                onfocus="this.select()" onchange="setPick('${editUser.id}','${m.id}','away',this.value)">
            </div>`;
 
-      html += `<div class="mq-card">
+      // Marcador parcial en vivo (hay resultado pero aún en ventana de 2h)
+      const liveScore = live && hasResult
+        ? `<span class="badge badge-live-score">${m.result.home}–${m.result.away}</span>`
+        : '';
+
+      html += `<div class="mq-card${live ? ' card-live' : ''}">
         <div class="mq-fixture">
           <div class="mq-team">${flagImg(m.home, 'flag-lg')}<span class="mq-name">${m.home}</span></div>
           ${center}
@@ -613,8 +633,9 @@ function renderMatches() {
         </div>
         <div class="mq-foot">
           <span class="mq-time"><i class="ti ti-clock"></i> ${timeStr}</span>
-          ${isLive(m) ? `<span class="badge badge-live"><i class="ti ti-broadcast"></i> EN VIVO</span>` : ''}
-          ${locked && !resultKnown && !isLive(m) ? `<span class="badge badge-warning"><i class="ti ti-lock"></i> bloqueado</span>` : ''}
+          ${live ? `<span class="badge badge-live"><i class="ti ti-broadcast"></i> EN VIVO</span>` : ''}
+          ${liveScore}
+          ${locked && !hasResult && !live ? `<span class="badge badge-warning"><i class="ti ti-lock"></i> bloqueado</span>` : ''}
           ${resultKnown ? `<span class="badge badge-gray">Final ${m.result.home}–${m.result.away}</span>` : ''}
           ${resultKnown && penWinner(m.result) ? `<span class="badge badge-info">Pen ${m.result.penHome}–${m.result.penAway} · ${penWinner(m.result) === 'H' ? m.home : m.away} ✓</span>` : ''}
           ${statusBadge}
@@ -796,11 +817,14 @@ function renderAdminMatches() {
       + ' ' + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
     const hasResult = m.result && m.result.home !== '' && m.result.away !== '';
     const isDraw = hasResult && parseInt(m.result.home) === parseInt(m.result.away);
+    const live = isLive(m);
 
     return `<div class="admin-match-row">
       <span style="font-size:13px;flex:1;min-width:160px">
         <strong>${m.home}</strong> vs <strong>${m.away}</strong><br>
         <span style="color:var(--text-secondary);font-size:11px">${dtStr} · ${m.phase}</span>
+        ${live ? `<span class="badge badge-live" style="font-size:10px;padding:1px 6px;margin-left:4px"><i class="ti ti-broadcast"></i> EN VIVO</span>` : ''}
+        ${m.finished ? `<span class="badge badge-gray" style="font-size:10px;padding:1px 6px;margin-left:4px">Finalizado</span>` : ''}
       </span>
       <input type="number" min="0" max="20" placeholder="L" value="${hasResult ? m.result.home : ''}"
         id="res-h-${m.id}" class="score-input">
@@ -816,6 +840,9 @@ function renderAdminMatches() {
       <button class="btn btn-sm btn-primary" onclick="saveResult('${m.id}')">
         <i class="ti ti-check"></i> Guardar
       </button>
+      ${live || m.finished ? `<button class="btn btn-sm ${m.finished ? '' : 'btn-danger'}" onclick="toggleFinished('${m.id}')" title="${m.finished ? 'Reabrir partido' : 'Marcar como finalizado'}">
+        <i class="ti ti-${m.finished ? 'player-play' : 'flag-check'}"></i>
+      </button>` : ''}
       <button class="btn btn-sm" onclick="openEditModal('${m.id}')" title="Editar partido">
         <i class="ti ti-edit"></i>
       </button>
@@ -841,6 +868,15 @@ async function saveResult(matchId) {
   }
   m.result = result;
   await saveState();
+}
+
+async function toggleFinished(matchId) {
+  const m = state.matches.find(x => x.id === matchId);
+  if (!m) return;
+  m.finished = !m.finished;
+  await saveState();
+  renderAdminMatches();
+  renderMatches();
 }
 
 let _deleteMatchId = null;

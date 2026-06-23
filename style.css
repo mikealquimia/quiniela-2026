@@ -261,6 +261,8 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 .badge-danger { background: var(--danger-bg); color: var(--danger-text); }
 .badge-gray { background: var(--bg-secondary); color: var(--text-secondary); }
 .badge-live { background: #e11d48; color: #fff; animation: livePulse 1.2s ease-in-out infinite; }
+.badge-live-score { background: #e11d4822; color: #e11d48; font-weight: 700; border: 1px solid #e11d4840; animation: livePulse 1.2s ease-in-out infinite; }
+.card-live { border-color: #e11d4855 !important; box-shadow: 0 0 0 2px #e11d4820; }
 @keyframes livePulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
 .pen-label { font-size: 11px; color: var(--text-secondary); align-self: center; }
 
