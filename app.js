@@ -642,6 +642,18 @@ function renderMatches() {
         ? `<span class="badge badge-live-score">${m.result.home}–${m.result.away}</span>`
         : '';
 
+      // Goleadores
+      const hasGoals = hasResult && ((m.goals1 && m.goals1.length) || (m.goals2 && m.goals2.length));
+      const scorersHtml = hasGoals ? (() => {
+        const homeGoals = (m.goals1 || []).map(g => `<span class="scorer-item">${g.name} <span class="scorer-min">${g.minute}'</span></span>`).join('');
+        const awayGoals = (m.goals2 || []).map(g => `<span class="scorer-item">${g.name} <span class="scorer-min">${g.minute}'</span></span>`).join('');
+        return `<div class="mq-scorers">
+          <div class="scorers-col scorers-home">${homeGoals}</div>
+          <div class="scorers-icon"><i class="ti ti-ball-football"></i></div>
+          <div class="scorers-col scorers-away">${awayGoals}</div>
+        </div>`;
+      })() : '';
+
       html += `<div class="mq-card${live ? ' card-live' : ''}">
         <div class="mq-fixture">
           <div class="mq-team">${flagImg(m.home, 'flag-lg')}<span class="mq-name">${m.home}</span></div>
@@ -657,6 +669,7 @@ function renderMatches() {
           ${resultKnown && penWinner(m.result) ? `<span class="badge badge-info">Pen ${m.result.penHome}–${m.result.penAway} · ${penWinner(m.result) === 'H' ? m.home : m.away} ✓</span>` : ''}
           ${statusBadge}
         </div>
+        ${scorersHtml}
       </div>`;
     });
 
@@ -1110,46 +1123,49 @@ async function importFixtures() {
   }
 }
 
-// ─── Actualizar resultados desde API-Football ────────────────────────────────
+// ─── Actualizar resultados y goleadores desde openfootball ──────────────────
 async function syncResults() {
-  if (!API_FOOTBALL_KEY) {
-    alert('Agrega tu API key de API-Football en app.js primero.\nRegistrate gratis en: https://dashboard.api-football.com/register');
-    return;
-  }
   const btn = document.getElementById('btn-sync');
   btn.textContent = 'Actualizando...';
   btn.disabled = true;
   try {
-    const res = await fetch('https://v3.football.api-sports.io/fixtures?league=1&season=2026&status=FT', {
-      headers: {
-        'x-rapidapi-key': API_FOOTBALL_KEY,
-        'x-rapidapi-host': 'v3.football.api-sports.io'
-      }
-    });
+    const res = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
+    if (!res.ok) throw new Error('No se pudo conectar con openfootball');
     const data = await res.json();
-    if (!data.response) throw new Error('Respuesta inválida de API-Football');
+    const matches = data.matches || [];
 
     let updated = 0;
-    data.response.forEach(fixture => {
-      const home = fixture.teams.home.name;
-      const away = fixture.teams.away.name;
-      const scoreHome = String(fixture.goals.home ?? '');
-      const scoreAway = String(fixture.goals.away ?? '');
-      if (scoreHome === '' || scoreAway === '') return;
+    matches.forEach(of => {
+      if (!of.score || !of.score.ft) return; // sin resultado aún
 
-      // Match by team names (fuzzy - find closest)
-      const match = state.matches.find(m =>
-        m.home.toLowerCase().includes(home.toLowerCase().slice(0,5)) ||
-        home.toLowerCase().includes(m.home.toLowerCase().slice(0,5))
-      );
-      if (match && (match.result.home !== scoreHome || match.result.away !== scoreAway)) {
+      const scoreHome = String(of.score.ft[0]);
+      const scoreAway = String(of.score.ft[1]);
+      const goals1 = (of.goals1 || []).map(g => ({ name: g.name, minute: g.minute }));
+      const goals2 = (of.goals2 || []).map(g => ({ name: g.name, minute: g.minute }));
+
+      // Match por nombres (fuzzy igual que antes)
+      const match = state.matches.find(m => {
+        const h1 = m.home.toLowerCase(), h2 = of.team1.toLowerCase();
+        const a1 = m.away.toLowerCase(), a2 = of.team2.toLowerCase();
+        return (h1.includes(h2.slice(0,5)) || h2.includes(h1.slice(0,5))) &&
+               (a1.includes(a2.slice(0,5)) || a2.includes(a1.slice(0,5)));
+      });
+      if (!match) return;
+
+      const changed = match.result.home !== scoreHome || match.result.away !== scoreAway;
+      const goalsChanged = JSON.stringify(match.goals1) !== JSON.stringify(goals1) ||
+                           JSON.stringify(match.goals2) !== JSON.stringify(goals2);
+
+      if (changed || goalsChanged) {
         match.result = { home: scoreHome, away: scoreAway };
+        match.goals1 = goals1;
+        match.goals2 = goals2;
         updated++;
       }
     });
 
     await saveState();
-    btn.textContent = '✓ ' + updated + ' resultados actualizados';
+    btn.textContent = '✓ ' + updated + ' partidos actualizados';
     renderAdminMatches();
     renderTabla();
     renderStats();
