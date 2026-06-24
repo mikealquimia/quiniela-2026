@@ -394,9 +394,12 @@ function penWinner(result) {
   return ph > pa ? 'H' : 'A';
 }
 
-function calcPoints(userId, match) {
+function calcPoints(userId, match, { includeLive = false } = {}) {
   if (!match.result || match.result.home === '') return 0;
-  if (!isFinished(match)) return 0; // partido aún en vivo, no contar puntos todavía
+  const finished = isFinished(match);
+  const live = isLive(match);
+  // Si no está finalizado y no queremos incluir partidos en vivo, retornar 0
+  if (!finished && !(includeLive && live)) return 0;
   const pick = state.picks[userId]?.[match.id];
   if (!pickSet(pick)) return 0;
   const np = normPick(pick);
@@ -426,9 +429,11 @@ function getTableData() {
   return state.users.map(u => {
     let pts = 0, exact = 0, winner = 0, played = 0;
     state.matches.forEach(m => {
-      if (m.result && m.result.home !== '' && isFinished(m)) {
+      const finished = isFinished(m);
+      const live = isLive(m);
+      if (m.result && m.result.home !== '' && (finished || live)) {
         played++;
-        const p = calcPoints(u.id, m);
+        const p = calcPoints(u.id, m, { includeLive: true });
         pts += p;
         if (p === state.points.exact) exact++;
         else if (p > 0) winner++;
@@ -440,11 +445,11 @@ function getTableData() {
 
 function getStreak(userId) {
   const played = state.matches
-    .filter(m => m.result && m.result.home !== '')
+    .filter(m => m.result && m.result.home !== '' && (isFinished(m) || isLive(m)))
     .sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
   let streak = 0;
   for (const m of played) {
-    const pts = calcPoints(userId, m);
+    const pts = calcPoints(userId, m, { includeLive: true });
     if (streak === 0) { streak = pts > 0 ? 1 : -1; continue; }
     if (streak > 0 && pts > 0) streak++;
     else if (streak < 0 && pts === 0) streak--;
@@ -461,9 +466,11 @@ function renderMyStats() {
   const u = state.currentUser;
   let pts = 0, exact = 0, winner = 0, played = 0, pending = 0;
   state.matches.forEach(m => {
-    if (m.result && m.result.home !== '') {
+    const mFinished = isFinished(m);
+    const mLive = isLive(m);
+    if (m.result && m.result.home !== '' && (mFinished || mLive)) {
       played++;
-      const p = calcPoints(u.id, m);
+      const p = calcPoints(u.id, m, { includeLive: true });
       pts += p;
       if (p === state.points.exact) exact++;
       else if (p > 0) winner++;
@@ -592,8 +599,9 @@ function renderMatches() {
       const live = isLive(m);
       const finished = isFinished(m);
       const hasResult = m.result && m.result.home !== '' && m.result.away !== '';
-      // "resultKnown" para puntos: solo cuando el partido terminó y hay resultado
+      // "resultKnown" para puntos: cuando el partido terminó o está en vivo con resultado
       const resultKnown = hasResult && finished;
+      const resultLive  = hasResult && live && !finished;
       const pick = state.picks[editUser.id]?.[m.id] || { home: '', away: '' };
       const np = normPick(pick);
 
@@ -606,6 +614,15 @@ function renderMatches() {
           statusBadge = `<span class="badge badge-purple">+${pts}</span>`;
         else if (pickSet(pick))
           statusBadge = `<span class="badge badge-gray">+0</span>`;
+      } else if (resultLive && pickSet(pick)) {
+        // Puntos tentativos mientras el partido está en vivo
+        const pts = calcPoints(editUser.id, m, { includeLive: true });
+        if (pts === state.points.exact)
+          statusBadge = `<span class="badge badge-success" style="opacity:.7" title="Tentativo, pendiente de finalizar">~+${pts} exacto</span>`;
+        else if (pts > 0)
+          statusBadge = `<span class="badge badge-purple" style="opacity:.7" title="Tentativo, pendiente de finalizar">~+${pts}</span>`;
+        else
+          statusBadge = `<span class="badge badge-gray" style="opacity:.7" title="Tentativo, pendiente de finalizar">~+0</span>`;
       }
 
       const timeStr = new Date(m.datetime).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
@@ -1207,12 +1224,14 @@ function cmpCard(m) {
   // Clasifica puntos al estilo Pitaya (exacto / acierta ganador+bonos / falla)
   const badgeFor = pts => pts === state.points.exact ? 'badge-success' : pts > 0 ? 'badge-purple' : 'badge-danger';
 
-  // Ganadores (mayor puntuación)
+  const liveOrFinished = isLive(m) || isFinished(m);
+
+  // Ganadores (mayor puntuación) — visible en vivo y al terminar
   let winnersHtml = '';
-  if (hasResult) {
+  if (hasResult && liveOrFinished) {
     const scored = state.users
       .filter(u => pickSet(state.picks[u.id]?.[m.id]))
-      .map(u => ({ u, pts: calcPoints(u.id, m) }));
+      .map(u => ({ u, pts: calcPoints(u.id, m, { includeLive: true }) }));
     const max = scored.reduce((mx, s) => Math.max(mx, s.pts), 0);
     const winners = max > 0 ? scored.filter(s => s.pts === max) : [];
     winnersHtml = winners.length
@@ -1225,7 +1244,7 @@ function cmpCard(m) {
   const myPick = meId ? state.picks[meId]?.[m.id] : null;
   const myHas = pickSet(myPick);
   const myNp = normPick(myPick);
-  const myPts = hasResult && myHas ? calcPoints(meId, m) : null;
+  const myPts = hasResult && myHas && liveOrFinished ? calcPoints(meId, m, { includeLive: true }) : null;
   const mineStr = myHas
     ? myNp.home + ' - ' + myNp.away + (myPts !== null ? ' <span class="cmp-mine-pts">(+' + myPts + ')</span>' : '')
     : '<span class="cmp-noone">Sin predicción</span>';
@@ -1236,7 +1255,7 @@ function cmpCard(m) {
       const pk = state.picks[u.id]?.[m.id];
       const has = pickSet(pk);
       const np = normPick(pk);
-      const pts = hasResult && has ? calcPoints(u.id, m) : null;
+      const pts = hasResult && has && liveOrFinished ? calcPoints(u.id, m, { includeLive: true }) : null;
       return { u, has, np, pts };
     })
     .sort((a, b) => (b.pts ?? -1) - (a.pts ?? -1))
