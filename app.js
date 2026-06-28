@@ -1059,7 +1059,15 @@ async function importFixtures() {
     const data = await res.json();
 
     let added = 0;
+    let updated = 0;
+    // Para fase de grupos: dedup por equipos. Para eliminación: dedup por fecha+ronda (los equipos pueden ser "W74")
     const existingKeys = new Set(state.matches.map(m => m.home + '|' + m.away));
+    // Mapa de partidos existentes por fecha+ronda para actualizar placeholders
+    const existingByDateRound = {};
+    state.matches.forEach(m => {
+      const key = (m.datetime || '').slice(0,10) + '|' + (m.phase || '');
+      existingByDateRound[key] = m;
+    });
 
     // openfootball 2026 format: data.matches[] with round, date, time, team1, team2, group, score
     const matches = data.matches || [];
@@ -1067,7 +1075,6 @@ async function importFixtures() {
       const home = m.team1;
       const away = m.team2;
       if (!home || !away) return;
-      if (existingKeys.has(home + '|' + away)) return;
 
       // Parse datetime - time comes as "13:00 UTC-6", convert to UTC ISO
       // Ejemplo: "13:00 UTC-6" en fecha "2026-06-11" → UTC = 13:00 + 6h = 19:00Z
@@ -1088,13 +1095,16 @@ async function importFixtures() {
         + pad(utcDate.getUTCMinutes()) + ':00Z';
 
       // Phase from round
+      // openfootball 2026 usa: "Round of 32" (16avos), "Round of 16" (8vos),
+      // "Quarter-final", "Semi-final", "Final", "Match for third place"
       const round = (m.round || 'Fase de grupos').toLowerCase();
       let phase = 'Fase de grupos';
-      if (round.includes('final') && round.includes('cuarto')) phase = 'Cuartos de final';
-      else if (round.includes('octavo') || round.includes('round of 16')) phase = 'Octavos de final';
-      else if (round.includes('semifinal') || round.includes('semi')) phase = 'Semifinal';
-      else if (round.includes('third') || round.includes('tercer')) phase = 'Tercer lugar';
-      else if (round.includes('final')) phase = 'Final';
+      if (round.includes('round of 32'))                              phase = '16avos de final';
+      else if (round.includes('round of 16'))                         phase = 'Octavos de final';
+      else if (round.includes('quarter'))                             phase = 'Cuartos de final';
+      else if (round.includes('semi'))                                phase = 'Semifinal';
+      else if (round.includes('third') || round.includes('tercer'))  phase = 'Tercer lugar';
+      else if (round === 'final')                                     phase = 'Final';
       else if (m.group) phase = 'Fase de grupos - ' + m.group;
 
       // Score if available
@@ -1103,16 +1113,44 @@ async function importFixtures() {
         result = { home: String(m.score.ft[0]), away: String(m.score.ft[1]) };
       }
 
+      // ── Para knockout: si ya existe un partido con esa fecha+fase, actualizar equipos ──
+      const dateRoundKey = datetime.slice(0,10) + '|' + phase;
+      const isKnockout = phase !== 'Fase de grupos' && !phase.startsWith('Fase de grupos -');
+      const isPlaceholder = /^W\d+$/.test(home) || /^W\d+$/.test(away);
+
+      if (isKnockout && !isPlaceholder) {
+        // Tenemos equipos reales: buscar partido existente con placeholder o mismo nombre
+        const existingMatch = existingByDateRound[dateRoundKey];
+        if (existingMatch) {
+          // Actualizar equipos y resultado en el partido existente
+          existingMatch.home = home;
+          existingMatch.away = away;
+          if (m.score && m.score.ft) existingMatch.result = result;
+          existingMatch.datetime = datetime;
+          updated++;
+          return;
+        }
+      }
+
+      // Si ya existe exactamente este partido (mismos equipos), omitir
+      if (existingKeys.has(home + '|' + away)) return;
+      // No importar placeholders WXX si aún no hay equipos definidos (se añadirán al actualizar)
+      if (isPlaceholder) return;
+
       state.matches.push({
         id: 'm' + Date.now() + Math.random().toString(36).slice(2,6),
         home, away, datetime, phase, result
       });
       existingKeys.add(home + '|' + away);
+      existingByDateRound[dateRoundKey] = state.matches[state.matches.length - 1];
       added++;
     });
 
     await saveState();
-    btn.textContent = '✓ Importados ' + added + ' partidos';
+    const msg = [];
+    if (added > 0) msg.push('✓ ' + added + ' nuevos');
+    if (updated > 0) msg.push(updated + ' actualizados');
+    btn.textContent = msg.length ? msg.join(', ') + ' partidos' : '✓ Sin cambios nuevos';
     renderAdminMatches();
     renderMatches();
     setTimeout(() => { btn.textContent = 'Importar partidos del Mundial'; btn.disabled = false; }, 3000);

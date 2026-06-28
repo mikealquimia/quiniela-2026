@@ -1,134 +1,112 @@
 // mascota.js — Pitaya Mundialista
-// Videos: agregar/quitar entradas en el array VIDEOS
-// Si el archivo termina en .webm, se usa <video> directo (canal alpha real)
-// Si es .mp4, se usa canvas con chroma key en tiempo real
+// Video único con fondo blanco/gris neutro eliminado en tiempo real con Canvas
 (function () {
-  const VIDEOS = [
-    'mascota.mp4',
-    //'mascota2.mp4',
-    //'mascota3.mp4',
-    'mascota4.webm',   // ← este tiene alpha real, no necesita canvas
-  ];
+  const VIDEO = 'mascota.mp4'; // renombra el archivo a esto al subirlo
 
-  let current = 0;
-  let animId  = null;
-  let frameN  = 0;
-  let bgR = 255, bgG = 255, bgB = 255;
-  let bgMode  = 'white';
+  let animId = null;
+  let frameN = 0;
+  let bgR = 255, bgG = 255, bgB = 255; // color del fondo muestreado del borde
 
-  // ── Elementos base ──
+  // ── Crear elementos ──
   const wrap = document.createElement('div');
   wrap.className = 'mascota-wrap';
+
+  const canvas = document.createElement('canvas');
+  const video  = document.createElement('video');
+  video.muted       = true;
+  video.playsInline = true;
+  video.crossOrigin = 'anonymous';
+  video.loop        = true;
+  video.style.display = 'none';
+
+  wrap.appendChild(canvas);
+  wrap.appendChild(video);
   document.body.appendChild(wrap);
 
-  // ── Modo WEBM: <video> con alpha nativo ──
-  let videoEl   = null;
-  let canvasEl  = null;
-  let ctx       = null;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-  function clearWrap() {
-    if (animId) { cancelAnimationFrame(animId); animId = null; }
-    wrap.innerHTML = '';
-    videoEl = null; canvasEl = null; ctx = null;
-  }
-
-  function loadWebm(src) {
-    clearWrap();
-    const v = document.createElement('video');
-    v.src       = src;
-    v.autoplay  = true;
-    v.loop      = false;
-    v.muted     = true;
-    v.playsInline = true;
-    v.style.width = '100%';
-    v.style.display = 'block';
-    v.addEventListener('ended', nextVideo);
-    v.play().catch(() => document.addEventListener('click', () => v.play(), { once: true }));
-    wrap.appendChild(v);
-    videoEl = v;
-  }
-
-  // ── Modo MP4: canvas + chroma key ──
+  // ── Muestrear borde completo del frame para obtener el color del fondo ──
   function sampleBorder(data, w, h) {
-    let tr=0,tg=0,tb=0,n=0; const step=6;
-    for(let x=0;x<w;x+=step){
-      let i=x*4; tr+=data[i];tg+=data[i+1];tb+=data[i+2];n++;
-      i=((h-1)*w+x)*4; tr+=data[i];tg+=data[i+1];tb+=data[i+2];n++;
+    let tr = 0, tg = 0, tb = 0, n = 0;
+    const step = 6;
+    for (let x = 0; x < w; x += step) {
+      let i = x * 4;
+      tr += data[i]; tg += data[i+1]; tb += data[i+2]; n++;
+      i = ((h-1)*w + x) * 4;
+      tr += data[i]; tg += data[i+1]; tb += data[i+2]; n++;
     }
-    for(let y=8;y<h-8;y+=step){
-      let i=y*w*4; tr+=data[i];tg+=data[i+1];tb+=data[i+2];n++;
-      i=(y*w+w-1)*4; tr+=data[i];tg+=data[i+1];tb+=data[i+2];n++;
+    for (let y = 10; y < h-10; y += step) {
+      let i = y * w * 4;
+      tr += data[i]; tg += data[i+1]; tb += data[i+2]; n++;
+      i = (y * w + w-1) * 4;
+      tr += data[i]; tg += data[i+1]; tb += data[i+2]; n++;
     }
-    bgR=tr/n; bgG=tg/n; bgB=tb/n;
-    if(bgR>200&&bgG>200&&bgB>200) bgMode='white';
-    else if(bgG>bgR*1.35&&bgG>bgB*1.35&&bgG>80) bgMode='green';
-    else bgMode=bgR>bgG*1.1?'white':'transition';
+    bgR = tr/n; bgG = tg/n; bgB = tb/n;
   }
 
+  // ── Eliminar fondo: neutro (R≈G≈B) y cercano al color del borde ──
   function removeBackground(data) {
-    for(let i=0;i<data.length;i+=4){
-      const r=data[i],g=data[i+1],b=data[i+2];
-      if(bgMode==='white'||bgMode==='transition'){
-        const mn=Math.min(r,g,b);
-        if(mn>200) data[i+3]=mn>240?0:Math.round((240-mn)/40*255);
-        continue;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i+1], b = data[i+2];
+
+      // Chroma: qué tan "coloreado" es el pixel (0 = gris puro, alto = saturado)
+      const mx = Math.max(r, g, b);
+      const mn = Math.min(r, g, b);
+      const chroma = mx - mn;
+
+      // Distancia euclidiana al color del borde
+      const dr = r - bgR, dg = g - bgG, db = b - bgB;
+      const dist = Math.sqrt(dr*dr + dg*dg + db*db);
+
+      // Es fondo si: está cerca del color del borde Y es poco saturado (neutro/gris)
+      if (dist < 55 && chroma < 35) {
+        const tDist   = Math.max(0, Math.min(1, (55 - dist) / 30));
+        const tChroma = Math.max(0, Math.min(1, (35 - chroma) / 20));
+        data[i+3] = Math.round((1 - tDist * tChroma) * 255);
       }
-      const rn=r/255,gn=g/255,bn=b/255;
-      const maxC=Math.max(rn,gn,bn),minC=Math.min(rn,gn,bn),delta=maxC-minC;
-      if(maxC<0.15) continue;
-      const S=maxC>0.002?delta/maxC:0;
-      let H=0;
-      if(delta>0.002){
-        if(maxC===rn)      H=((gn-bn)/delta*60+360)%360;
-        else if(maxC===gn) H=(bn-rn)/delta*60+120;
-        else               H=(rn-gn)/delta*60+240;
-      }
-      if(H<85||H>160||S<0.25) continue;
-      const dr=r-bgR,dg=g-bgG,db=b-bgB;
-      const dist=Math.sqrt(dr*dr+dg*dg+db*db);
-      if(dist<65) data[i+3]=dist<38?0:Math.round((65-dist)/27*255);
     }
   }
 
+  // ── Loop de render ──
   function tick() {
-    if(!videoEl||videoEl.paused||videoEl.ended) return;
-    if(videoEl.readyState<2){ animId=requestAnimationFrame(tick); return; }
-    ctx.drawImage(videoEl,0,0,canvasEl.width,canvasEl.height);
-    const frame=ctx.getImageData(0,0,canvasEl.width,canvasEl.height);
-    if(frameN===0||frameN%8===0) sampleBorder(frame.data,canvasEl.width,canvasEl.height);
+    if (video.paused || video.ended) return;
+    if (video.readyState < 2) { animId = requestAnimationFrame(tick); return; }
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    // Muestrear borde frame 0 y luego cada 10 frames (el fondo varía suavemente)
+    if (frameN === 0 || frameN % 10 === 0) {
+      sampleBorder(frame.data, canvas.width, canvas.height);
+    }
     frameN++;
+
     removeBackground(frame.data);
-    ctx.putImageData(frame,0,0);
-    animId=requestAnimationFrame(tick);
+    ctx.putImageData(frame, 0, 0);
+    animId = requestAnimationFrame(tick);
   }
 
-  function loadMp4(src) {
-    clearWrap();
-    frameN=0; bgR=255;bgG=255;bgB=255;bgMode='white';
-    const v=document.createElement('video');
-    v.src=src; v.muted=true; v.playsInline=true; v.crossOrigin='anonymous';
-    v.style.display='none';
-    const c=document.createElement('canvas');
-    c.style.width='100%'; c.style.display='block';
-    wrap.appendChild(c); wrap.appendChild(v);
-    videoEl=v; canvasEl=c; ctx=c.getContext('2d',{willReadFrequently:true});
-    v.addEventListener('loadedmetadata',()=>{ c.width=v.videoWidth; c.height=v.videoHeight; });
-    v.addEventListener('canplay',()=>{ if(frameN>0)return; ctx.drawImage(v,0,0,c.width,c.height); const f=ctx.getImageData(0,0,c.width,c.height); sampleBorder(f.data,c.width,c.height); });
-    v.addEventListener('play',()=>{ if(animId)cancelAnimationFrame(animId); tick(); });
-    v.addEventListener('ended',nextVideo);
-    v.play().catch(()=>document.addEventListener('click',()=>v.play(),{once:true}));
-  }
+  video.addEventListener('loadedmetadata', () => {
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+  });
 
-  function nextVideo() {
-    current=(current+1)%VIDEOS.length;
-    loadVideo(current);
-  }
+  // Pre-muestrear el fondo del primer frame antes de arrancar
+  video.addEventListener('canplay', () => {
+    if (frameN > 0) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    sampleBorder(frame.data, canvas.width, canvas.height);
+  });
 
-  function loadVideo(index) {
-    const src=VIDEOS[index];
-    if(src.endsWith('.webm')) loadWebm(src);
-    else loadMp4(src);
-  }
+  video.addEventListener('play', () => {
+    if (animId) cancelAnimationFrame(animId);
+    tick();
+  });
 
-  loadVideo(current);
+  video.src = VIDEO;
+  video.load();
+  video.play().catch(() => {
+    document.addEventListener('click', () => video.play(), { once: true });
+  });
 })();
