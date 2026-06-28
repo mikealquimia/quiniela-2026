@@ -534,7 +534,7 @@ function populateDateFilter() {
   sel.innerHTML = '<option value="all">Todos los partidos</option>';
   dates.forEach(d => {
     const dt = new Date(d + 'T12:00:00');
-    const label = dt.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+    const label = dt.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Guatemala' });
     const o = document.createElement('option');
     o.value = d;
     o.textContent = (d === today ? '📅 Hoy — ' : '') + label.charAt(0).toUpperCase() + label.slice(1);
@@ -550,7 +550,7 @@ function populateDateFilter() {
 
 function formatDayLabel(d) {
   const dt = new Date(d + 'T12:00:00');
-  const s = dt.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' });
+  const s = dt.toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Guatemala' });
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 // Mueve la selección entre días disponibles (‹ ›) en Mi quiniela
@@ -637,7 +637,7 @@ function renderMatches() {
           statusBadge = `<span class="badge badge-gray" style="opacity:.7" title="Tentativo, pendiente de finalizar">~+0</span>`;
       }
 
-      const timeStr = new Date(m.datetime).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+      const timeStr = new Date(m.datetime).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Guatemala' });
 
       const center = locked || hasResult
         ? `<div class="mq-final">${pickSet(pick) ? `${np.home}<span>–</span>${np.away}` : `<span style="opacity:.5">– –</span>`}</div>`
@@ -835,7 +835,7 @@ function renderAdminMatches() {
     adminSel.innerHTML = '<option value="all">Todas las fechas</option>';
     dates.forEach(d => {
       const dt = new Date(d + 'T12:00:00');
-      const label = dt.toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short' });
+      const label = dt.toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'America/Guatemala' });
       const o = document.createElement('option');
       o.value = d; o.textContent = label;
       adminSel.appendChild(o);
@@ -855,8 +855,8 @@ function renderAdminMatches() {
 
   container.innerHTML = matches.map(m => {
     const dt = new Date(m.datetime);
-    const dtStr = dt.toLocaleDateString('es', { day: 'numeric', month: 'short' })
-      + ' ' + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    const dtStr = dt.toLocaleDateString('es', { day: 'numeric', month: 'short', timeZone: 'America/Guatemala' })
+      + ' ' + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Guatemala' });
     const hasResult = m.result && m.result.home !== '' && m.result.away !== '';
     const isDraw = hasResult && parseInt(m.result.home) === parseInt(m.result.away);
     const live = isLive(m);
@@ -1364,8 +1364,8 @@ function cmpCard(m) {
     : '<span class="cmp-vs">vs</span>';
   const subline = hasResult
     ? 'Resultado final'
-    : dt.toLocaleDateString('es', { day: 'numeric', month: 'short' }) + ' · '
-      + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    : dt.toLocaleDateString('es', { day: 'numeric', month: 'short', timeZone: 'America/Guatemala' }) + ' · '
+      + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Guatemala' });
 
   return '<div class="cmp-card" id="cmpc-' + m.id + '">'
     + '<div class="cmp-fixture">'
@@ -1813,13 +1813,13 @@ function resolveBracket() {
 
 // ── Flag-only compact bracket ──
 function brFlag(team, isWinner, size) {
-  const sz = size || 32;
   const c = team ? TEAM_FLAGS[team] : null;
+  // flagcdn.com only supports specific widths: 20, 40, 80, 160, 320...
   if (c) {
-    return `<img src="https://flagcdn.com/w${sz}/${c}.png" alt="${team}" title="${team}"
-      class="brf${isWinner ? ' brf-win' : ''}" style="width:${sz}px;height:${Math.round(sz*0.67)}px">`;
+    return `<img src="https://flagcdn.com/w40/${c}.png" alt="${team}" title="${team}" loading="lazy"
+      class="brf${isWinner ? ' brf-win' : ''}">`;
   }
-  return `<span class="brf brf-tbd" style="width:${sz}px;height:${Math.round(sz*0.67)}px"><i class="ti ti-star-filled"></i></span>`;
+  return `<span class="brf brf-tbd"><i class="ti ti-star-filled"></i></span>`;
 }
 
 function brMatch(homeTeam, awayTeam, winner, isVertical) {
