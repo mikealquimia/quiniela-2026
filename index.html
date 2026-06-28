@@ -171,16 +171,13 @@
     <div class="card" style="margin-bottom:1rem;background:var(--accent-bg);border-color:var(--accent)">
       <div class="section-title" style="color:var(--accent-text)"><i class="ti ti-world-download"></i> Sincronización automática</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <button class="btn btn-primary btn-sm" id="btn-import" onclick="importFixtures()">
-          <i class="ti ti-calendar-down"></i> Importar partidos del Mundial
+        <button class="btn btn-primary" id="btn-sync-all" onclick="syncAll()" style="font-size:14px;padding:10px 20px;gap:8px">
+          <i class="ti ti-refresh"></i> 🔄 Sincronizar
         </button>
-        <button class="btn btn-sm" id="btn-sync" onclick="syncResults()" style="background:var(--success-bg);border-color:var(--success-text);color:var(--success-text)">
-          <i class="ti ti-refresh"></i> Actualizar resultados
-        </button>
-        <button class="btn btn-sm" id="btn-fix" onclick="fixAndDeduplicateMatches()" style="background:#7c4d0022;border:1px solid #f59e0b;color:#f59e0b">
-          <i class="ti ti-tool"></i> Limpiar y corregir fases
-        </button>
-        <span style="font-size:11px;color:var(--accent-text)">Partidos: openfootball (gratis) · Resultados: API-Football (requiere key gratuita)</span>
+        <div style="font-size:11px;color:var(--accent-text);line-height:1.5">
+          Importa partidos nuevos · Corrige horarios y fases · Actualiza resultados · Elimina duplicados<br>
+          <span style="opacity:.7">Fuente: openfootball · Una sola llamada, todo actualizado.</span>
+        </div>
       </div>
     </div>
 

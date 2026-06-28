@@ -1081,530 +1081,135 @@ function resetEditAs(e) {
 }
 
 
-// ─── Importar partidos desde openfootball (sin API key) ──────────────────────
-async function importFixtures() {
-  const btn = document.getElementById('btn-import');
-  btn.textContent = 'Importando...';
-  btn.disabled = true;
+// ─── Sincronización completa desde openfootball ──────────────────────────────
+async function syncAll() {
+  const btn = document.getElementById('btn-sync-all');
+  const steps = ['Conectando...','Importando partidos...','Corrigiendo horarios...','Actualizando resultados...','Limpiando duplicados...'];
+  let si = 0;
+  const tick = () => { if (btn) btn.textContent = steps[Math.min(si++, steps.length-1)]; };
+  tick(); if (btn) btn.disabled = true;
+
   try {
-    const res = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
-    if (!res.ok) throw new Error('No se pudo conectar');
-    const data = await res.json();
-
-    let added = 0;
-    let updated = 0;
-    // Para fase de grupos: dedup por equipos. Para eliminación: dedup por fecha+ronda (los equipos pueden ser "W74")
-    const existingKeys = new Set(state.matches.map(m => m.home + '|' + m.away));
-    // Mapa de partidos existentes por fecha+ronda para actualizar placeholders
-    const existingByDateRound = {};
-    state.matches.forEach(m => {
-      const key = (m.datetime || '').slice(0,10) + '|' + (m.phase || '');
-      existingByDateRound[key] = m;
-    });
-
-    // openfootball 2026 format: data.matches[] with round, date, time, team1, team2, group, score
-    const matches = data.matches || [];
-    matches.forEach(m => {
-      const home = m.team1;
-      const away = m.team2;
-      if (!home || !away) return;
-
-      // Parse datetime - time comes as "13:00 UTC-6", convert to UTC ISO
-      // Ejemplo: "13:00 UTC-6" en fecha "2026-06-11" → UTC = 13:00 + 6h = 19:00Z
-      const timeParts = (m.time || '12:00 UTC-6').split(' ');
-      const timeStr = timeParts[0]; // "13:00"
-      const tzStr   = timeParts[1] || 'UTC-6'; // "UTC-6" o "UTC-4"
-      const tzMatch = tzStr.match(/UTC([+-]\d+)/);
-      const tzOffset = tzMatch ? parseInt(tzMatch[1]) : -6; // negativo = atrás de UTC
-      // Convertir a UTC: restar el offset (UTC-6 → sumar 6h)
-      const localMs  = new Date(m.date + 'T' + timeStr + ':00').getTime();
-      const utcMs    = localMs - tzOffset * 60 * 60 * 1000;
-      const utcDate  = new Date(utcMs);
-      const pad = n => String(n).padStart(2,'0');
-      const datetime = utcDate.getUTCFullYear() + '-'
-        + pad(utcDate.getUTCMonth()+1) + '-'
-        + pad(utcDate.getUTCDate()) + 'T'
-        + pad(utcDate.getUTCHours()) + ':'
-        + pad(utcDate.getUTCMinutes()) + ':00Z';
-
-      // Phase from round
-      // openfootball 2026 usa: "Round of 32" (16avos), "Round of 16" (8vos),
-      // "Quarter-final", "Semi-final", "Final", "Match for third place"
-      const round = (m.round || 'Fase de grupos').toLowerCase();
-      let phase = 'Fase de grupos';
-      if (round.includes('round of 32'))                              phase = '16avos de final';
-      else if (round.includes('round of 16'))                         phase = 'Octavos de final';
-      else if (round.includes('quarter'))                             phase = 'Cuartos de final';
-      else if (round.includes('semi'))                                phase = 'Semifinal';
-      else if (round.includes('third') || round.includes('tercer'))  phase = 'Tercer lugar';
-      else if (round === 'final')                                     phase = 'Final';
-      else if (m.group) phase = 'Fase de grupos - ' + m.group;
-
-      // Score if available
-      let result = { home: '', away: '' };
-      if (m.score && m.score.ft) {
-        result = { home: String(m.score.ft[0]), away: String(m.score.ft[1]) };
-      }
-
-      // ── Para knockout: si ya existe un partido con esa fecha+fase, actualizar equipos ──
-      const dateRoundKey = datetime.slice(0,10) + '|' + phase;
-      const isKnockout = phase !== 'Fase de grupos' && !phase.startsWith('Fase de grupos -');
-      const isPlaceholder = /^W\d+$/.test(home) || /^W\d+$/.test(away);
-
-      if (isKnockout && !isPlaceholder) {
-        // Tenemos equipos reales: buscar partido existente con placeholder o mismo nombre
-        const existingMatch = existingByDateRound[dateRoundKey];
-        if (existingMatch) {
-          // Actualizar equipos y resultado en el partido existente
-          existingMatch.home = home;
-          existingMatch.away = away;
-          if (m.score && m.score.ft) existingMatch.result = result;
-          existingMatch.datetime = datetime;
-          updated++;
-          return;
-        }
-      }
-
-      // Si ya existe exactamente este partido (mismos equipos), omitir
-      if (existingKeys.has(home + '|' + away)) return;
-      // No importar placeholders WXX si aún no hay equipos definidos (se añadirán al actualizar)
-      if (isPlaceholder) return;
-
-      state.matches.push({
-        id: 'm' + Date.now() + Math.random().toString(36).slice(2,6),
-        home, away, datetime, phase, result
-      });
-      existingKeys.add(home + '|' + away);
-      existingByDateRound[dateRoundKey] = state.matches[state.matches.length - 1];
-      added++;
-    });
-
-    await saveState();
-    const msg = [];
-    if (added > 0) msg.push('✓ ' + added + ' nuevos');
-    if (updated > 0) msg.push(updated + ' actualizados');
-    btn.textContent = msg.length ? msg.join(', ') + ' partidos' : '✓ Sin cambios nuevos';
-    renderAdminMatches();
-    renderMatches();
-    setTimeout(() => { btn.textContent = 'Importar partidos del Mundial'; btn.disabled = false; }, 3000);
-  } catch(e) {
-    btn.textContent = 'Error: ' + e.message;
-    btn.disabled = false;
-    console.error(e);
-  }
-}
-
-// ─── Actualizar resultados y goleadores desde openfootball ──────────────────
-async function syncResults() {
-  const btn = document.getElementById('btn-sync');
-  btn.textContent = 'Actualizando...';
-  btn.disabled = true;
-  try {
+    tick();
     const res = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
     if (!res.ok) throw new Error('No se pudo conectar con openfootball');
-    const data = await res.json();
-    const matches = data.matches || [];
-
-    let updated = 0;
-    matches.forEach(of => {
-      if (!of.score || !of.score.ft) return; // sin resultado aún
-
-      const scoreHome = String(of.score.ft[0]);
-      const scoreAway = String(of.score.ft[1]);
-      const goals1 = (of.goals1 || []).map(g => ({ name: g.name, minute: g.minute }));
-      const goals2 = (of.goals2 || []).map(g => ({ name: g.name, minute: g.minute }));
-
-      // Match por nombres (fuzzy igual que antes)
-      const match = state.matches.find(m => {
-        const h1 = m.home.toLowerCase(), h2 = of.team1.toLowerCase();
-        const a1 = m.away.toLowerCase(), a2 = of.team2.toLowerCase();
-        return (h1.includes(h2.slice(0,5)) || h2.includes(h1.slice(0,5))) &&
-               (a1.includes(a2.slice(0,5)) || a2.includes(a1.slice(0,5)));
-      });
-      if (!match) return;
-
-      const changed = match.result.home !== scoreHome || match.result.away !== scoreAway;
-      const goalsChanged = JSON.stringify(match.goals1) !== JSON.stringify(goals1) ||
-                           JSON.stringify(match.goals2) !== JSON.stringify(goals2);
-
-      if (changed || goalsChanged) {
-        match.result = { home: scoreHome, away: scoreAway };
-        match.goals1 = goals1;
-        match.goals2 = goals2;
-        updated++;
-      }
-    });
-
-    await saveState();
-    btn.textContent = '✓ ' + updated + ' partidos actualizados';
-    renderAdminMatches();
-    renderTabla();
-    renderStats();
-    renderMatches();
-    setTimeout(() => { btn.textContent = 'Actualizar resultados'; btn.disabled = false; }, 3000);
-  } catch(e) {
-    btn.textContent = 'Error: ' + e.message;
-    btn.disabled = false;
-    console.error(e);
-  }
-}
-
-
-
-// ─── Render: Comparar ────────────────────────────────────────────────────────
-function renderComparar() {
-  const listEl = document.getElementById('comparar-list');
-  if (!listEl) return;
-
-  // Partidos por día (hoy por defecto)
-  populateCmpDates();
-  const dayFilter = document.getElementById('cmp-date-filter')?.value || 'all';
-  let matches = [...state.matches].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
-  if (dayFilter !== 'all') matches = matches.filter(m => m.datetime && getDateGuatemala(m.datetime) === dayFilter);
-
-  if (matches.length === 0) {
-    listEl.innerHTML = '<div class="cmp-empty">No hay partidos para este día. Usa ‹ › para ver otro día.</div>';
-    return;
-  }
-
-  // Agrupados por estado: finalizados / en curso / pendientes
-  const groups = { done: [], live: [], pend: [] };
-  matches.forEach(m => {
-    if (m.result && m.result.home !== '') groups.done.push(m);
-    else if (isLocked(m)) groups.live.push(m);
-    else groups.pend.push(m);
-  });
-
-  const meta = {
-    done: { label: 'Finalizados', icon: 'ti-circle-check' },
-    live: { label: 'En curso',    icon: 'ti-ball-football' },
-    pend: { label: 'Pendientes',  icon: 'ti-clock' }
-  };
-  const order = ['done', 'live', 'pend'];
-  const firstVisible = order.find(k => groups[k].length);
-
-  let html = '';
-  order.forEach(key => {
-    const ms = groups[key];
-    if (!ms.length) return;
-    const open = key === 'done' || (!groups.done.length && key === firstVisible);
-    html += '<div class="cmp-group' + (open ? ' open' : '') + '" id="cmpg-' + key + '">'
-      + '<button class="cmp-group-head" onclick="toggleCmpGroup(\'' + key + '\')">'
-      + '<i class="ti ' + meta[key].icon + ' cmp-group-icon"></i>'
-      + '<span class="cmp-group-title">' + meta[key].label + '</span>'
-      + '<span class="cmp-group-count">' + ms.length + '</span>'
-      + '<i class="ti ti-chevron-down cmp-chev"></i>'
-      + '</button>'
-      + '<div class="cmp-group-wrap"><div class="cmp-group-body">'
-      + ms.map(cmpCard).join('')
-      + '</div></div></div>';
-  });
-
-  listEl.innerHTML = html;
-}
-
-// Tarjeta colapsable de un partido
-function cmpCard(m) {
-  const hasResult = m.result && m.result.home !== '';
-  const meId = state.currentUser?.id;
-
-  // Clasifica puntos al estilo Pitaya (exacto / acierta ganador+bonos / falla)
-  const badgeFor = pts => pts === state.points.exact ? 'badge-success' : pts > 0 ? 'badge-purple' : 'badge-danger';
-
-  const liveOrFinished = isLive(m) || isFinished(m);
-
-  // Ganadores (mayor puntuación) — visible en vivo y al terminar
-  let winnersHtml = '';
-  if (hasResult && liveOrFinished) {
-    const scored = state.users
-      .filter(u => pickSet(state.picks[u.id]?.[m.id]))
-      .map(u => ({ u, pts: calcPoints(u.id, m, { includeLive: true }) }));
-    const max = scored.reduce((mx, s) => Math.max(mx, s.pts), 0);
-    const winners = max > 0 ? scored.filter(s => s.pts === max) : [];
-    winnersHtml = winners.length
-      ? winners.map(s => '<span class="cmp-win">🥇 ' + s.u.name.split(' ')[0]
-          + '<span class="badge-win">+' + s.pts + '</span></span>').join('')
-      : '<span class="cmp-noone">Nadie acertó este partido</span>';
-  }
-
-  // Mi predicción
-  const myPick = meId ? state.picks[meId]?.[m.id] : null;
-  const myHas = pickSet(myPick);
-  const myNp = normPick(myPick);
-  const myPts = hasResult && myHas && liveOrFinished ? calcPoints(meId, m, { includeLive: true }) : null;
-  const mineStr = myHas
-    ? myNp.home + ' - ' + myNp.away + (myPts !== null ? ' <span class="cmp-mine-pts">(+' + myPts + ')</span>' : '')
-    : '<span class="cmp-noone">Sin predicción</span>';
-
-  // Detalle: todas las predicciones, ordenadas por puntos
-  const detailHtml = state.users
-    .map(u => {
-      const pk = state.picks[u.id]?.[m.id];
-      const has = pickSet(pk);
-      const np = normPick(pk);
-      const pts = hasResult && has && liveOrFinished ? calcPoints(u.id, m, { includeLive: true }) : null;
-      return { u, has, np, pts };
-    })
-    .sort((a, b) => (b.pts ?? -1) - (a.pts ?? -1))
-    .map(r => {
-      const color = colorFor(r.u.name);
-      const pickStr = r.has ? r.np.home + '-' + r.np.away : '–';
-      const cls = r.pts !== null ? badgeFor(r.pts) : 'badge-gray';
-      return '<div class="cmp-pred' + (r.u.id === meId ? ' me' : '') + '">'
-        + '<span class="cmp-avatar" style="background:' + color + '30;color:' + color + '">' + initials(r.u.name) + '</span>'
-        + '<span class="cmp-pred-name">' + r.u.name.split(' ')[0] + '</span>'
-        + '<span class="cmp-pred-pick">' + pickStr + '</span>'
-        + '<span class="badge ' + cls + ' cmp-pred-badge">' + (r.pts !== null ? '+' + r.pts : '·') + '</span>'
-        + '</div>';
-    }).join('');
-
-  const dt = new Date(m.datetime);
-  const center = hasResult
-    ? '<span class="cmp-score">' + m.result.home + ' - ' + m.result.away + '</span>'
-    : '<span class="cmp-vs">vs</span>';
-  const subline = hasResult
-    ? 'Resultado final'
-    : dt.toLocaleDateString('es', { day: 'numeric', month: 'short', timeZone: 'America/Guatemala' }) + ' · '
-      + dt.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Guatemala' });
-
-  return '<div class="cmp-card" id="cmpc-' + m.id + '">'
-    + '<div class="cmp-fixture">'
-    +   '<span class="cmp-team home">' + m.home + ' ' + flagImg(m.home) + '</span>'
-    +   center
-    +   '<span class="cmp-team away">' + flagImg(m.away) + ' ' + m.away + '</span>'
-    + '</div>'
-    + '<div class="cmp-subline">' + subline + '</div>'
-    + (winnersHtml ? '<div class="cmp-winners">' + winnersHtml + '</div>' : '')
-    + '<div class="cmp-mine"><span class="cmp-mine-label">⭐ Tu predicción</span>'
-    +   '<span class="cmp-mine-val">' + mineStr + '</span></div>'
-    + '<button class="cmp-toggle" onclick="toggleCmpCard(\'' + m.id + '\')">'
-    +   '<span class="cmp-toggle-label"></span><i class="ti ti-chevron-down cmp-chev"></i>'
-    + '</button>'
-    + '<div class="cmp-detail-wrap"><div class="cmp-detail">' + detailHtml + '</div></div>'
-    + '</div>';
-}
-
-// ─── Verificar horarios contra openfootball ──────────────────────────────────
-async function verifySchedule() {
-  const btn = document.getElementById('btn-verify-schedule');
-  const out = document.getElementById('verify-schedule-output');
-  btn.disabled = true;
-  btn.textContent = 'Verificando...';
-  out.innerHTML = '';
-
-  try {
-    const res = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
-    if (!res.ok) throw new Error('No se pudo conectar con openfootball');
-    const data = await res.json();
-    const matches = data.matches || [];
-
-    // Construir mapa source: "Home|Away" → datetime UTC
-    const sourceMap = {};
-    matches.forEach(m => {
-      if (!m.team1 || !m.team2) return;
-      const timeParts = (m.time || '12:00 UTC-6').split(' ');
-      const timeStr = timeParts[0];
-      const tzStr   = timeParts[1] || 'UTC-6';
-      const tzMatch = tzStr.match(/UTC([+-]\d+)/);
-      const tzOffset = tzMatch ? parseInt(tzMatch[1]) : -6;
-      const localMs = new Date(m.date + 'T' + timeStr + ':00').getTime();
-      const utcMs   = localMs - tzOffset * 60 * 60 * 1000;
-      const utcDate = new Date(utcMs);
-      const pad = n => String(n).padStart(2,'0');
-      const utcISO = utcDate.getUTCFullYear() + '-'
-        + pad(utcDate.getUTCMonth()+1) + '-'
-        + pad(utcDate.getUTCDate()) + 'T'
-        + pad(utcDate.getUTCHours()) + ':'
-        + pad(utcDate.getUTCMinutes()) + ':00Z';
-      sourceMap[m.team1 + '|' + m.team2] = { utcISO, rawTime: m.time, date: m.date };
-    });
-
-    // Comparar contra partidos guardados
-    let issues = [];
-    let ok = 0;
-    state.matches.forEach(m => {
-      const key = m.home + '|' + m.away;
-      const src = sourceMap[key];
-      if (!src) return; // partido no encontrado en source (ok, puede ser manual)
-      // Normalizar ambos a minutos UTC para comparar
-      const savedDate  = new Date(m.datetime);
-      const sourceDate = new Date(src.utcISO);
-      const diffMin = Math.abs((savedDate.getTime() - sourceDate.getTime()) / 60000);
-      if (diffMin > 1) {
-        // Convertir a hora Guatemala para mostrar
-        const toGT = dt => {
-          const d = new Date(new Date(dt).getTime() - 6*60*60*1000);
-          const pad = n => String(n).padStart(2,'0');
-          return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes());
-        };
-        issues.push({
-          match: m,
-          savedGT:  toGT(m.datetime),
-          correctGT: toGT(src.utcISO),
-          correctUTC: src.utcISO,
-          diffMin
-        });
-      } else {
-        ok++;
-      }
-    });
-
-    if (issues.length === 0) {
-      out.innerHTML = '<div style="color:var(--success-text);background:var(--success-bg);border-radius:var(--radius);padding:10px 14px;font-size:13px">'
-        + '<i class="ti ti-circle-check"></i> ¡Todos los horarios están correctos! (' + ok + ' partidos verificados)</div>';
-    } else {
-      let html = '<div style="font-size:13px;margin-bottom:10px;color:var(--danger-text)">'
-        + '<i class="ti ti-alert-triangle"></i> ' + issues.length + ' partido(s) con horario incorrecto:</div>';
-      issues.forEach(issue => {
-        html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;background:var(--bg-secondary);border-radius:var(--radius);margin-bottom:6px;font-size:13px">'
-          + '<span style="font-weight:600;flex:1;min-width:140px">' + issue.match.home + ' vs ' + issue.match.away + '</span>'
-          + '<span style="color:var(--danger-text)">Guardado: ' + issue.savedGT + ' GT</span>'
-          + '<span style="color:var(--text-secondary)">→</span>'
-          + '<span style="color:var(--success-text)">Correcto: ' + issue.correctGT + ' GT</span>'
-          + '<button class="btn btn-sm btn-primary" style="font-size:11px;padding:3px 8px" '
-          + 'onclick="fixOneSchedule(\'' + issue.match.id + '\',\'' + issue.correctUTC + '\',this)">'
-          + '<i class="ti ti-check"></i> Corregir</button>'
-          + '</div>';
-      });
-      out.innerHTML = html;
-    }
-  } catch(e) {
-    out.innerHTML = '<div style="color:var(--danger-text);font-size:13px"><i class="ti ti-alert-circle"></i> Error: ' + e.message + '</div>';
-  }
-  btn.disabled = false;
-  btn.textContent = 'Verificar horarios';
-}
-
-async function fixOneSchedule(matchId, correctUTC, btn) {
-  const m = state.matches.find(x => x.id === matchId);
-  if (!m) return;
-  m.datetime = correctUTC;
-  btn.disabled = true;
-  btn.textContent = '✓ Corregido';
-  btn.style.background = 'var(--success-bg)';
-  btn.style.color = 'var(--success-text)';
-  await saveState();
-  renderMatches();
-}
-
-// ─── Limpiar y corregir fases / deduplicar partidos ────────────────────────
-async function fixAndDeduplicateMatches() {
-  const btn = document.getElementById('btn-fix');
-  btn.textContent = 'Procesando...';
-  btn.disabled = true;
-
-  try {
-    // 1) Obtener los datos actualizados de openfootball para saber qué equipos son reales
-    const res = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
-    if (!res.ok) throw new Error('No se pudo conectar');
     const data = await res.json();
     const ofMatches = data.matches || [];
 
-    // Construir mapa: fecha+equipo1 → datos completos de openfootball
-    const ofMap = {};
-    ofMatches.forEach(m => {
-      const key = m.date + '|' + m.team1 + '|' + m.team2;
-      ofMap[key] = m;
-    });
+    const pad = n => String(n).padStart(2,'0');
 
-    // Función para detectar si un nombre es placeholder (letras/números como "1J", "2H", "3E/F/G/I/J", "W74", "L101", etc.)
+    // Convierte "19:00 UTC-6" en fecha "2026-06-29" → ISO UTC correcto
+    // Usa Date.UTC() para evitar que el browser interprete como hora local (double-conversion bug)
+    function toUTC(dateStr, timeAndTz) {
+      const parts = (timeAndTz || '12:00 UTC-6').split(' ');
+      const timeStr = parts[0], tzStr = parts[1] || 'UTC-6';
+      const [h, min] = timeStr.split(':').map(Number);
+      const [yyyy, mm, dd] = dateStr.split('-').map(Number);
+      const tzMatch = tzStr.match(/UTC([+-]\d+)/);
+      const tzOffset = tzMatch ? parseInt(tzMatch[1]) : -6;
+      // Date.UTC crea timestamp en UTC puro, sin zona horaria del browser
+      const utcMs = Date.UTC(yyyy, mm - 1, dd, h, min, 0) - tzOffset * 3600000;
+      const u = new Date(utcMs);
+      return u.getUTCFullYear() + '-' + pad(u.getUTCMonth()+1) + '-' + pad(u.getUTCDate())
+        + 'T' + pad(u.getUTCHours()) + ':' + pad(u.getUTCMinutes()) + ':00Z';
+    }
+
+    function roundToPhase(round, group) {
+      const r = (round || '').toLowerCase();
+      if (r.includes('round of 32'))                    return '16avos de final';
+      if (r.includes('round of 16'))                    return 'Octavos de final';
+      if (r.includes('quarter'))                        return 'Cuartos de final';
+      if (r.includes('semi'))                           return 'Semifinal';
+      if (r.includes('third') || r.includes('tercer')) return 'Tercer lugar';
+      if (r === 'final')                                return 'Final';
+      if (group)                                        return 'Fase de grupos - ' + group;
+      return 'Fase de grupos';
+    }
+
     function isPlaceholder(name) {
       if (!name) return true;
-      // Patrones: "W74", "L102", "1J", "2H", "3A/B/C", "1E", etc.
       if (/^[WL]\d+$/.test(name)) return true;
       if (/^\d+[A-Z](\/[A-Z])*$/.test(name)) return true;
       if (/^\d[A-Z](\/[A-Z\/]+)?$/.test(name)) return true;
       return false;
     }
 
-    // Función para mapear round de openfootball → fase en español
-    function roundToPhase(round, group) {
-      const r = (round || '').toLowerCase();
-      if (r.includes('round of 32'))   return '16avos de final';
-      if (r.includes('round of 16'))   return 'Octavos de final';
-      if (r.includes('quarter'))       return 'Cuartos de final';
-      if (r.includes('semi'))          return 'Semifinal';
-      if (r.includes('third') || r.includes('tercer')) return 'Tercer lugar';
-      if (r === 'final')               return 'Final';
-      if (group)                       return 'Fase de grupos - ' + group;
-      return 'Fase de grupos';
-    }
+    // PASO 1: Importar nuevos y corregir existentes
+    tick();
+    let added = 0, timeFixed = 0, phaseFixed = 0, resultsFixed = 0;
 
-    // 2) Corregir fases de partidos existentes usando datos de openfootball
-    let phaseFixed = 0;
-    state.matches.forEach(sm => {
-      // Buscar en openfootball por equipo home+away
-      const ofMatch = ofMatches.find(m =>
-        m.team1 === sm.home && m.team2 === sm.away
-      );
-      if (ofMatch) {
-        const correctPhase = roundToPhase(ofMatch.round, ofMatch.group);
-        if (sm.phase !== correctPhase) {
-          sm.phase = correctPhase;
-          phaseFixed++;
+    ofMatches.forEach(of => {
+      const home = of.team1, away = of.team2;
+      if (!home || !away || isPlaceholder(home) || isPlaceholder(away)) return;
+
+      const datetime = toUTC(of.date, of.time);
+      const phase    = roundToPhase(of.round, of.group);
+      const result   = of.score?.ft
+        ? { home: String(of.score.ft[0]), away: String(of.score.ft[1]) }
+        : null;
+      const goals1 = (of.goals1 || []).map(g => ({ name: g.name, minute: g.minute }));
+      const goals2 = (of.goals2 || []).map(g => ({ name: g.name, minute: g.minute }));
+
+      const existing = state.matches.find(m => m.home === home && m.away === away);
+
+      if (existing) {
+        if (existing.datetime !== datetime) { existing.datetime = datetime; timeFixed++; }
+        if (existing.phase !== phase)       { existing.phase = phase;       phaseFixed++; }
+        if (result && (existing.result?.home !== result.home || existing.result?.away !== result.away)) {
+          existing.result = result; resultsFixed++;
         }
-      }
-    });
-
-    // 3) Deduplicar: si hay dos partidos con mismo datetime exacto (o mismos equipos),
-    //    quedarse con el que tenga equipos reales; eliminar placeholders
-    // Agrupar por clave datetime+fase (cada slot de horario es único)
-    const byDatePhase = {};
-    state.matches.forEach(m => {
-      // Usar datetime completo para evitar conflictos con varios partidos el mismo día
-      const key = (m.datetime || '').slice(0, 16) + '|' + (m.phase || '');
-      if (!byDatePhase[key]) byDatePhase[key] = [];
-      byDatePhase[key].push(m);
-    });
-
-    const toRemove = new Set();
-    Object.values(byDatePhase).forEach(group => {
-      if (group.length < 2) return;
-      // Separar reales y placeholders
-      const reals = group.filter(m => !isPlaceholder(m.home) && !isPlaceholder(m.away));
-      const placeholders = group.filter(m => isPlaceholder(m.home) || isPlaceholder(m.away));
-      if (reals.length > 0) {
-        // Eliminar todos los placeholders de este grupo
-        placeholders.forEach(m => toRemove.add(m.id));
-        // Si hay más de un real, eliminar duplicados exactos (mismo home+away)
-        const seen = new Set();
-        reals.forEach(m => {
-          const k = m.home + '|' + m.away;
-          if (seen.has(k)) {
-            toRemove.add(m.id);
-          } else {
-            seen.add(k);
-          }
+        if (result) {
+          existing.goals1 = goals1;
+          existing.goals2 = goals2;
+        }
+      } else {
+        state.matches.push({
+          id: 'm' + Date.now() + Math.random().toString(36).slice(2,6),
+          home, away, datetime, phase,
+          result: result || { home: '', away: '' }
         });
+        added++;
       }
     });
 
-    // 4) Eliminar partidos-placeholder que no tienen ningún partido real contraparte
-    //    (los que nunca se podrán jugar, i.e. están solos con placeholder)
-    state.matches.forEach(m => {
-      if (isPlaceholder(m.home) || isPlaceholder(m.away)) {
-        toRemove.add(m.id);
-      }
+    // PASO 2: Eliminar placeholders y duplicados exactos
+    tick();
+    const beforeCount = state.matches.length;
+    state.matches = state.matches.filter(m => !isPlaceholder(m.home) && !isPlaceholder(m.away));
+    const seen = new Set();
+    state.matches = state.matches.filter(m => {
+      const k = m.home + '|' + m.away;
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
     });
+    const removed = beforeCount - state.matches.length;
 
-    const removedCount = toRemove.size;
-    state.matches = state.matches.filter(m => !toRemove.has(m.id));
-
+    // PASO 3: Guardar y refrescar todo
+    tick();
     await saveState();
-    renderAdminMatches();
-    renderMatches();
+    renderAdminMatches(); renderTabla(); renderStats(); renderMatches(); renderBracket();
 
     const parts = [];
-    if (phaseFixed > 0)  parts.push(phaseFixed + ' fases corregidas');
-    if (removedCount > 0) parts.push(removedCount + ' duplicados/placeholders eliminados');
-    btn.textContent = parts.length ? '✓ ' + parts.join(', ') : '✓ Todo ya estaba correcto';
-    setTimeout(() => { btn.textContent = 'Limpiar y corregir fases'; btn.disabled = false; }, 4000);
+    if (added > 0)        parts.push(added + ' nuevos');
+    if (timeFixed > 0)    parts.push(timeFixed + ' horarios corregidos');
+    if (phaseFixed > 0)   parts.push(phaseFixed + ' fases corregidas');
+    if (resultsFixed > 0) parts.push(resultsFixed + ' resultados actualizados');
+    if (removed > 0)      parts.push(removed + ' eliminados');
+
+    if (btn) {
+      btn.textContent = parts.length ? '✓ ' + parts.join(' · ') : '✓ Todo al día';
+      setTimeout(() => { btn.textContent = '🔄 Sincronizar'; btn.disabled = false; }, 4000);
+    }
   } catch(e) {
-    btn.textContent = 'Error: ' + e.message;
-    btn.disabled = false;
+    if (btn) { btn.textContent = '✗ Error: ' + e.message; btn.disabled = false; }
     console.error(e);
   }
 }
+
+// Aliases para compatibilidad
+async function importFixtures()          { return syncAll(); }
+async function syncResults()             { return syncAll(); }
+async function fixAndDeduplicateMatches(){ return syncAll(); }
 
 // ─── Corrección masiva de horarios ───────────────────────────────────────────
 function openFixTimesModal() {
