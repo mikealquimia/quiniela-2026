@@ -297,6 +297,7 @@ function refreshAll() {
   renderComparar();
   renderAdminMatches();
   renderAdminUsers();
+  renderBracket();
   const elExact  = document.getElementById('pts-exact');
   const elResult = document.getElementById('pts-result');
   if (elExact)  elExact.value  = state.points.exact;
@@ -305,13 +306,14 @@ function refreshAll() {
 
 // ─── Tabs ────────────────────────────────────────────────────────────────────
 function showTab(id, btn) {
-  ['tab-quiniela','tab-tabla','tab-stats','tab-comparar','tab-admin'].forEach(t => {
+  ['tab-quiniela','tab-tabla','tab-stats','tab-comparar','tab-admin','tab-bracket'].forEach(t => {
     document.getElementById(t).classList.add('hidden');
   });
   document.getElementById(id).classList.remove('hidden');
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   if (btn) btn.classList.add('active');
   if (id === 'tab-comparar') renderComparar();
+  if (id === 'tab-bracket') renderBracket();
 }
 function toggleCmpCard(id)  { document.getElementById('cmpc-' + id)?.classList.toggle('open'); }
 function toggleCmpGroup(key) { document.getElementById('cmpg-' + key)?.classList.toggle('open'); }
@@ -1700,3 +1702,261 @@ initFirebase().catch(err => {
 
 // Refresca el estado "en vivo" de los partidos cada minuto.
 setInterval(() => { if (state.currentUser && state.editingAs) renderMatches(); }, 60000);
+
+// ─── Bracket Mundial 2026 ────────────────────────────────────────────────────
+// Estructura fija del bracket basada en openfootball:
+// R32: matches 73-88, R16: W74vsW77, W73vsW75, etc.
+// La lógica resuelve quién avanza buscando en state.matches por equipo+resultado
+
+const BRACKET_STRUCTURE = {
+  // 16avos de final (R32) — índice 0-15
+  r32: [
+    // Lado izquierdo (top)
+    { home: 'South Africa', away: 'Canada' },   // 0 → slot 73
+    { home: 'Germany',      away: 'Paraguay' },  // 1 → slot 74  ← ganador va a R16[0]
+    { home: 'Netherlands',  away: 'Morocco' },   // 2 → slot 75
+    { home: 'Brazil',       away: 'Japan' },     // 3 → slot 76  ← ganador va a R16[2]
+    { home: 'France',       away: 'Sweden' },    // 4 → slot 77  ← ganador va a R16[0]
+    { home: 'Ivory Coast',  away: 'Norway' },    // 5 → slot 78
+    { home: 'Mexico',       away: 'Ecuador' },   // 6 → slot 79  ← ganador va a R16[2]... etc
+    { home: 'England',      away: 'DR Congo' },  // 7 → slot 80
+    // Lado derecho (bottom)
+    { home: 'USA',          away: 'Bosnia & Herzegovina' }, // 8 → slot 81
+    { home: 'Belgium',      away: 'Senegal' },              // 9 → slot 82
+    { home: 'Portugal',     away: 'Croatia' },              // 10 → slot 83
+    { home: 'Spain',        away: 'Austria' },              // 11 → slot 84
+    { home: 'Switzerland',  away: 'Algeria' },              // 12 → slot 85
+    { home: 'Argentina',    away: 'Cape Verde' },           // 13 → slot 86
+    { home: 'Colombia',     away: 'Ghana' },                // 14 → slot 87
+    { home: 'Australia',    away: 'Egypt' },                // 15 → slot 88
+  ],
+  // R16 (8vos): pares de índices en r32 cuyos ganadores se enfrentan
+  // openfootball: W74vsW77, W73vsW75, W76vsW78, W79vsW80, W83vsW84, W81vsW82, W86vsW88, W85vsW87
+  r16Pairs: [
+    [1, 4],   // R16[0]: W74(Germany/Paraguay) vs W77(France/Sweden)
+    [0, 2],   // R16[1]: W73(SouthAfrica/Canada) vs W75(Netherlands/Morocco)
+    [3, 5],   // R16[2]: W76(Brazil/Japan) vs W78(IvoryCoast/Norway)
+    [6, 7],   // R16[3]: W79(Mexico/Ecuador) vs W80(England/DRCongo)
+    [10,11],  // R16[4]: W83(Portugal/Croatia) vs W84(Spain/Austria)
+    [8, 9],   // R16[5]: W81(USA/Bosnia) vs W82(Belgium/Senegal)
+    [13,15],  // R16[6]: W86(Argentina/CapeVerde) vs W88(Australia/Egypt)
+    [12,14],  // R16[7]: W85(Switzerland/Algeria) vs W87(Colombia/Ghana)
+  ],
+  // QF: W89vsW90=R16[0]vsR16[1], W91vsW92=R16[2]vsR16[3], W93vsW94=R16[4]vsR16[5], W95vsW96=R16[6]vsR16[7]
+  qfPairs: [
+    [0, 1], // QF[0]: W89 vs W90 (R16[0] vs R16[1]) — left top
+    [2, 3], // QF[1]: W91 vs W92 (R16[2] vs R16[3]) — left bottom
+    [4, 5], // QF[2]: W93 vs W94 (R16[4] vs R16[5]) — right top
+    [6, 7], // QF[3]: W95 vs W96 (R16[6] vs R16[7]) — right bottom
+  ],
+  // SF: W97vsW98=QF[0]vsQF[2], W99vsW100=QF[1]vsQF[3]
+  sfPairs: [
+    [0, 2], // SF[0]: W97 vs W98 — left winners
+    [1, 3], // SF[1]: W99 vs W100 — right winners (mirror side)
+  ],
+};
+
+function getWinnerOf(home, away) {
+  // Busca en state.matches el partido con esos equipos y retorna el ganador
+  if (!home || !away) return null;
+  const m = state.matches.find(sm =>
+    (sm.home === home && sm.away === away) ||
+    (sm.home === away && sm.away === home)
+  );
+  if (!m) return null;
+  const rh = m.result?.home, ra = m.result?.away;
+  if (rh === '' || rh === null || rh === undefined || ra === '' || ra === null || ra === undefined) return null;
+  const nh = parseInt(rh), na = parseInt(ra);
+  if (isNaN(nh) || isNaN(na)) return null;
+  if (nh > na) return m.home;
+  if (na > nh) return m.away;
+  // Empate en tiempo reglamentario → buscamos penales (campo penalty en result o en nombre)
+  // Por ahora si hay empate no marcamos ganador (esperar resultado final)
+  return null;
+}
+
+function resolveBracket() {
+  // Retorna arrays con el ganador de cada ronda
+  const r32 = BRACKET_STRUCTURE.r32;
+
+  // R32 winners
+  const w32 = r32.map(m => getWinnerOf(m.home, m.away));
+
+  // R16 winners: buscamos el partido entre w32[a] y w32[b]
+  const w16 = BRACKET_STRUCTURE.r16Pairs.map(([a, b]) => {
+    const ha = w32[a], hb = w32[b];
+    if (!ha || !hb) return null;
+    return getWinnerOf(ha, hb);
+  });
+
+  // QF winners
+  const wQF = BRACKET_STRUCTURE.qfPairs.map(([a, b]) => {
+    const ha = w16[a], hb = w16[b];
+    if (!ha || !hb) return null;
+    return getWinnerOf(ha, hb);
+  });
+
+  // SF winners + losers (for 3rd place)
+  const wSF = BRACKET_STRUCTURE.sfPairs.map(([a, b]) => {
+    const ha = wQF[a], hb = wQF[b];
+    if (!ha || !hb) return null;
+    return getWinnerOf(ha, hb);
+  });
+
+  // Final
+  const finalist1 = wSF[0], finalist2 = wSF[1];
+  const champion = (finalist1 && finalist2) ? getWinnerOf(finalist1, finalist2) : null;
+
+  return { w32, w16, wQF, wSF, champion };
+}
+
+function bracketTeamCard(team, score, isWinner) {
+  const flag = team
+    ? `<img src="https://flagcdn.com/w40/${TEAM_FLAGS[team] || ''}.png" alt="" class="br-flag" onerror="this.style.display='none'">`
+    : `<span class="br-flag-tbd"><i class="ti ti-star-filled"></i></span>`;
+  const cls = isWinner ? 'br-team winner' : (team ? 'br-team' : 'br-team tbd');
+  const scoreStr = (score !== '' && score !== null && score !== undefined) ? score : '';
+  return `<div class="${cls}">
+    ${flag}
+    <span class="br-name">${team || '?'}</span>
+    ${scoreStr !== '' ? `<span class="br-score">${scoreStr}</span>` : ''}
+  </div>`;
+}
+
+function getMatchScore(home, away) {
+  if (!home || !away) return { home: '', away: '' };
+  const m = state.matches.find(sm =>
+    (sm.home === home && sm.away === away) ||
+    (sm.home === away && sm.away === home)
+  );
+  if (!m) return { home: '', away: '' };
+  const swapped = m.home === away;
+  return swapped
+    ? { home: m.result?.away ?? '', away: m.result?.home ?? '' }
+    : { home: m.result?.home ?? '', away: m.result?.away ?? '' };
+}
+
+function bracketMatchNode(homeTeam, awayTeam, winner, label) {
+  const score = getMatchScore(homeTeam, awayTeam);
+  const hWin = winner && winner === homeTeam;
+  const aWin = winner && winner === awayTeam;
+  return `<div class="br-match">
+    ${label ? `<div class="br-label">${label}</div>` : ''}
+    ${bracketTeamCard(homeTeam, score.home, hWin)}
+    ${bracketTeamCard(awayTeam, score.away, aWin)}
+  </div>`;
+}
+
+function renderBracket() {
+  const el = document.getElementById('tab-bracket');
+  if (!el || el.classList.contains('hidden')) return;
+
+  const { w32, w16, wQF, wSF, champion } = resolveBracket();
+  const r32 = BRACKET_STRUCTURE.r32;
+  const r16p = BRACKET_STRUCTURE.r16Pairs;
+  const qfp  = BRACKET_STRUCTURE.qfPairs;
+  const sfp  = BRACKET_STRUCTURE.sfPairs;
+
+  // Build R16 matchups
+  const r16Teams = r16p.map(([a,b]) => ({ home: w32[a], away: w32[b] }));
+  const qfTeams  = qfp.map(([a,b])  => ({ home: w16[a], away: w16[b] }));
+  const sfTeams  = sfp.map(([a,b])  => ({ home: wQF[a], away: wQF[b] }));
+  const finalTeams = { home: wSF[0], away: wSF[1] };
+
+  // SF losers for 3rd place
+  const sfLosers = sfp.map(([a,b]) => {
+    const ha = wQF[a], hb = wQF[b];
+    if (!ha || !hb) return null;
+    const w = getWinnerOf(ha, hb);
+    if (!w) return null;
+    return w === ha ? hb : ha;
+  });
+
+  // ── HTML ──
+  const col = (nodes) => `<div class="br-col">${nodes.join('')}</div>`;
+
+  // Left bracket: r32[0..7] → r16[0..3] → qf[0,2] → sf[0]
+  const leftR32 = [
+    bracketMatchNode(r32[1].home, r32[1].away, w32[1], '16avos'),  // feeds r16[0] home
+    bracketMatchNode(r32[4].home, r32[4].away, w32[4], '16avos'),  // feeds r16[0] away
+    bracketMatchNode(r32[0].home, r32[0].away, w32[0], '16avos'),  // feeds r16[1] home
+    bracketMatchNode(r32[2].home, r32[2].away, w32[2], '16avos'),  // feeds r16[1] away
+    bracketMatchNode(r32[3].home, r32[3].away, w32[3], '16avos'),  // feeds r16[2] home
+    bracketMatchNode(r32[5].home, r32[5].away, w32[5], '16avos'),  // feeds r16[2] away
+    bracketMatchNode(r32[6].home, r32[6].away, w32[6], '16avos'),  // feeds r16[3] home
+    bracketMatchNode(r32[7].home, r32[7].away, w32[7], '16avos'),  // feeds r16[3] away
+  ];
+  const leftR16 = [
+    bracketMatchNode(r16Teams[0].home, r16Teams[0].away, w16[0], '8vos'),
+    bracketMatchNode(r16Teams[1].home, r16Teams[1].away, w16[1], '8vos'),
+    bracketMatchNode(r16Teams[2].home, r16Teams[2].away, w16[2], '8vos'),
+    bracketMatchNode(r16Teams[3].home, r16Teams[3].away, w16[3], '8vos'),
+  ];
+  const leftQF = [
+    bracketMatchNode(qfTeams[0].home, qfTeams[0].away, wQF[0], 'Cuartos'),
+    bracketMatchNode(qfTeams[1].home, qfTeams[1].away, wQF[1], 'Cuartos'),
+  ];
+  const leftSF = [
+    bracketMatchNode(sfTeams[0].home, sfTeams[0].away, wSF[0], 'Semi'),
+  ];
+
+  // Right bracket: r32[8..15] → r16[4..7] → qf[1,3] → sf[1]
+  const rightR32 = [
+    bracketMatchNode(r32[10].home, r32[10].away, w32[10], '16avos'), // feeds r16[4] home
+    bracketMatchNode(r32[11].home, r32[11].away, w32[11], '16avos'), // feeds r16[4] away
+    bracketMatchNode(r32[8].home,  r32[8].away,  w32[8],  '16avos'), // feeds r16[5] home
+    bracketMatchNode(r32[9].home,  r32[9].away,  w32[9],  '16avos'), // feeds r16[5] away
+    bracketMatchNode(r32[13].home, r32[13].away, w32[13], '16avos'), // feeds r16[6] home
+    bracketMatchNode(r32[15].home, r32[15].away, w32[15], '16avos'), // feeds r16[6] away
+    bracketMatchNode(r32[12].home, r32[12].away, w32[12], '16avos'), // feeds r16[7] home
+    bracketMatchNode(r32[14].home, r32[14].away, w32[14], '16avos'), // feeds r16[7] away
+  ];
+  const rightR16 = [
+    bracketMatchNode(r16Teams[4].home, r16Teams[4].away, w16[4], '8vos'), // QF right top: upper
+    bracketMatchNode(r16Teams[5].home, r16Teams[5].away, w16[5], '8vos'), // QF right top: lower
+    bracketMatchNode(r16Teams[6].home, r16Teams[6].away, w16[6], '8vos'), // QF right bot: upper
+    bracketMatchNode(r16Teams[7].home, r16Teams[7].away, w16[7], '8vos'), // QF right bot: lower
+  ];
+  const rightQF = [
+    bracketMatchNode(qfTeams[2].home, qfTeams[2].away, wQF[2], 'Cuartos'),
+    bracketMatchNode(qfTeams[3].home, qfTeams[3].away, wQF[3], 'Cuartos'),
+  ];
+  const rightSF = [
+    bracketMatchNode(sfTeams[1].home, sfTeams[1].away, wSF[1], 'Semi'),
+  ];
+
+  const thirdPlaceTeam1 = sfLosers[0];
+  const thirdPlaceTeam2 = sfLosers[1];
+  const thirdWinner = (thirdPlaceTeam1 && thirdPlaceTeam2) ? getWinnerOf(thirdPlaceTeam1, thirdPlaceTeam2) : null;
+  const thirdMatch = bracketMatchNode(thirdPlaceTeam1, thirdPlaceTeam2, thirdWinner, '3er lugar');
+
+  const champFlag = champion && TEAM_FLAGS[champion]
+    ? `<img src="https://flagcdn.com/w80/${TEAM_FLAGS[champion]}.png" alt="${champion}" class="br-champ-flag">`
+    : `<span class="br-champ-tbd"><i class="ti ti-trophy"></i></span>`;
+
+  el.innerHTML = `
+  <div class="br-wrapper">
+    <div class="br-title"><i class="ti ti-trophy"></i> Bracket Mundial 2026</div>
+    <div class="br-scroll">
+      <div class="br-grid">
+        ${col(leftR32)}
+        ${col(leftR16)}
+        ${col(leftQF)}
+        ${col(leftSF)}
+        <div class="br-col br-center">
+          <div class="br-champion">
+            ${champFlag}
+            <div class="br-champ-label">🏆 Campeón</div>
+            <div class="br-champ-name">${champion || '?'}</div>
+          </div>
+          <div class="br-third">${thirdMatch}</div>
+        </div>
+        ${col(rightSF)}
+        ${col(rightQF)}
+        ${col(rightR16)}
+        ${col(rightR32)}
+      </div>
+    </div>
+    <p class="br-note"><i class="ti ti-info-circle"></i> El bracket se actualiza automáticamente con los resultados oficiales guardados.</p>
+  </div>`;
+}
