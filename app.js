@@ -1454,6 +1454,125 @@ async function fixOneSchedule(matchId, correctUTC, btn) {
   renderMatches();
 }
 
+// ─── Limpiar y corregir fases / deduplicar partidos ────────────────────────
+async function fixAndDeduplicateMatches() {
+  const btn = document.getElementById('btn-fix');
+  btn.textContent = 'Procesando...';
+  btn.disabled = true;
+
+  try {
+    // 1) Obtener los datos actualizados de openfootball para saber qué equipos son reales
+    const res = await fetch('https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json');
+    if (!res.ok) throw new Error('No se pudo conectar');
+    const data = await res.json();
+    const ofMatches = data.matches || [];
+
+    // Construir mapa: fecha+equipo1 → datos completos de openfootball
+    const ofMap = {};
+    ofMatches.forEach(m => {
+      const key = m.date + '|' + m.team1 + '|' + m.team2;
+      ofMap[key] = m;
+    });
+
+    // Función para detectar si un nombre es placeholder (letras/números como "1J", "2H", "3E/F/G/I/J", "W74", "L101", etc.)
+    function isPlaceholder(name) {
+      if (!name) return true;
+      // Patrones: "W74", "L102", "1J", "2H", "3A/B/C", "1E", etc.
+      if (/^[WL]\d+$/.test(name)) return true;
+      if (/^\d+[A-Z](\/[A-Z])*$/.test(name)) return true;
+      if (/^\d[A-Z](\/[A-Z\/]+)?$/.test(name)) return true;
+      return false;
+    }
+
+    // Función para mapear round de openfootball → fase en español
+    function roundToPhase(round, group) {
+      const r = (round || '').toLowerCase();
+      if (r.includes('round of 32'))   return '16avos de final';
+      if (r.includes('round of 16'))   return 'Octavos de final';
+      if (r.includes('quarter'))       return 'Cuartos de final';
+      if (r.includes('semi'))          return 'Semifinal';
+      if (r.includes('third') || r.includes('tercer')) return 'Tercer lugar';
+      if (r === 'final')               return 'Final';
+      if (group)                       return 'Fase de grupos - ' + group;
+      return 'Fase de grupos';
+    }
+
+    // 2) Corregir fases de partidos existentes usando datos de openfootball
+    let phaseFixed = 0;
+    state.matches.forEach(sm => {
+      // Buscar en openfootball por equipo home+away
+      const ofMatch = ofMatches.find(m =>
+        m.team1 === sm.home && m.team2 === sm.away
+      );
+      if (ofMatch) {
+        const correctPhase = roundToPhase(ofMatch.round, ofMatch.group);
+        if (sm.phase !== correctPhase) {
+          sm.phase = correctPhase;
+          phaseFixed++;
+        }
+      }
+    });
+
+    // 3) Deduplicar: si hay dos partidos con mismo datetime exacto (o mismos equipos),
+    //    quedarse con el que tenga equipos reales; eliminar placeholders
+    // Agrupar por clave datetime+fase (cada slot de horario es único)
+    const byDatePhase = {};
+    state.matches.forEach(m => {
+      // Usar datetime completo para evitar conflictos con varios partidos el mismo día
+      const key = (m.datetime || '').slice(0, 16) + '|' + (m.phase || '');
+      if (!byDatePhase[key]) byDatePhase[key] = [];
+      byDatePhase[key].push(m);
+    });
+
+    const toRemove = new Set();
+    Object.values(byDatePhase).forEach(group => {
+      if (group.length < 2) return;
+      // Separar reales y placeholders
+      const reals = group.filter(m => !isPlaceholder(m.home) && !isPlaceholder(m.away));
+      const placeholders = group.filter(m => isPlaceholder(m.home) || isPlaceholder(m.away));
+      if (reals.length > 0) {
+        // Eliminar todos los placeholders de este grupo
+        placeholders.forEach(m => toRemove.add(m.id));
+        // Si hay más de un real, eliminar duplicados exactos (mismo home+away)
+        const seen = new Set();
+        reals.forEach(m => {
+          const k = m.home + '|' + m.away;
+          if (seen.has(k)) {
+            toRemove.add(m.id);
+          } else {
+            seen.add(k);
+          }
+        });
+      }
+    });
+
+    // 4) Eliminar partidos-placeholder que no tienen ningún partido real contraparte
+    //    (los que nunca se podrán jugar, i.e. están solos con placeholder)
+    state.matches.forEach(m => {
+      if (isPlaceholder(m.home) || isPlaceholder(m.away)) {
+        toRemove.add(m.id);
+      }
+    });
+
+    const removedCount = toRemove.size;
+    state.matches = state.matches.filter(m => !toRemove.has(m.id));
+
+    await saveState();
+    renderAdminMatches();
+    renderMatches();
+
+    const parts = [];
+    if (phaseFixed > 0)  parts.push(phaseFixed + ' fases corregidas');
+    if (removedCount > 0) parts.push(removedCount + ' duplicados/placeholders eliminados');
+    btn.textContent = parts.length ? '✓ ' + parts.join(', ') : '✓ Todo ya estaba correcto';
+    setTimeout(() => { btn.textContent = 'Limpiar y corregir fases'; btn.disabled = false; }, 4000);
+  } catch(e) {
+    btn.textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+    console.error(e);
+  }
+}
+
 // ─── Corrección masiva de horarios ───────────────────────────────────────────
 function openFixTimesModal() {
   // Previsualizar partidos afectados
