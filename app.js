@@ -698,6 +698,140 @@ async function setPick(userId, matchId, side, val) {
   await saveState();
 }
 
+
+// ─── Render: Comparar ────────────────────────────────────────────────────────
+function renderComparar() {
+  const container = document.getElementById('comparar-list');
+  if (!container) return;
+
+  populateCmpDates();
+
+  const dateFilter = document.getElementById('cmp-date-filter')?.value || 'all';
+
+  if (!state.users.length || !state.matches.length) {
+    container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-secondary)">
+      <i class="ti ti-users" style="font-size:28px;display:block;margin-bottom:10px"></i>
+      No hay datos para comparar aún
+    </div>`;
+    return;
+  }
+
+  let matches = [...state.matches];
+  if (dateFilter !== 'all') {
+    matches = matches.filter(m => m.datetime && getDateGuatemala(m.datetime) === dateFilter);
+  }
+
+  const me = state.currentUser;
+  let html = rankingHtml();
+
+  // Agrupar por fase
+  const phases = [...new Set(matches.map(m => m.phase))];
+
+  phases.forEach(phase => {
+    const phaseMatches = matches.filter(m => m.phase === phase);
+    const phaseId = phase.replace(/\s+/g, '_');
+
+    const matchCards = phaseMatches.map(m => {
+      const hasResult = m.result && m.result.home !== '' && m.result.away !== '';
+      const finished  = isFinished(m);
+      const live      = isLive(m);
+      const timeStr   = new Date(m.datetime).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Guatemala' });
+      const dateStr   = new Date(m.datetime).toLocaleDateString('es', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'America/Guatemala' });
+
+      // Quién acertó
+      const winners = state.users.filter(u => {
+        const p = calcPoints(u.id, m, { includeLive: true });
+        return p > 0 && hasResult && (finished || live);
+      });
+      const exactWinners = state.users.filter(u => {
+        const p = calcPoints(u.id, m, { includeLive: true });
+        return p === state.points.exact && hasResult && (finished || live);
+      });
+
+      // Mi predicción
+      const myPick = me ? (state.picks[me.id]?.[m.id] || null) : null;
+      const myNp   = myPick ? normPick(myPick) : null;
+      const myPts  = me && hasResult && (finished || live) ? calcPoints(me.id, m, { includeLive: true }) : null;
+
+      const resultBadge = finished
+        ? `<span class="badge badge-gray">Final ${m.result.home}–${m.result.away}</span>`
+        : live
+        ? `<span class="badge badge-live"><i class="ti ti-broadcast"></i> EN VIVO ${hasResult ? m.result.home+'–'+m.result.away : ''}</span>`
+        : '';
+
+      const winnersHtml = (finished || live) && hasResult
+        ? exactWinners.length
+          ? `<div class="cmp-winners">${exactWinners.map(u => {
+              const color = colorFor(u.name);
+              return `<span class="cmp-win">
+                <span class="cmp-avatar" style="background:${color}30;color:${color}">${initials(u.name)}</span>
+                <span>${u.name.split(' ')[0]}</span>
+                <span class="badge-win">exacto ✓</span>
+              </span>`;
+            }).join('')}
+            ${winners.filter(u => !exactWinners.find(e => e.id === u.id)).map(u => {
+              const color = colorFor(u.name);
+              return `<span class="cmp-win">
+                <span class="cmp-avatar" style="background:${color}30;color:${color}">${initials(u.name)}</span>
+                <span>${u.name.split(' ')[0]}</span>
+              </span>`;
+            }).join('')}</div>`
+          : winners.length
+          ? `<div class="cmp-winners">${winners.map(u => {
+              const color = colorFor(u.name);
+              return `<span class="cmp-win">
+                <span class="cmp-avatar" style="background:${color}30;color:${color}">${initials(u.name)}</span>
+                <span>${u.name.split(' ')[0]}</span>
+              </span>`;
+            }).join('')}</div>`
+          : `<div class="cmp-winners"><span class="cmp-noone">Nadie acertó</span></div>`
+        : '';
+
+      const myPickHtml = me && pickSet(myPick)
+        ? `<div class="cmp-mine">
+            <span class="cmp-mine-label"><i class="ti ti-user"></i> Mi pronóstico</span>
+            <span class="cmp-mine-val">${myNp.home} – ${myNp.away}</span>
+            ${myPts !== null ? `<span class="cmp-mine-pts">${myPts > 0 ? '+' + myPts + ' pts' : '+0'}</span>` : ''}
+          </div>`
+        : me
+        ? `<div class="cmp-mine" style="opacity:.5">
+            <span class="cmp-mine-label"><i class="ti ti-user"></i> Mi pronóstico</span>
+            <span class="cmp-mine-val" style="color:var(--text-secondary);font-size:13px">Sin pronóstico</span>
+          </div>`
+        : '';
+
+      return `<div class="cmp-card" id="cmpc-${m.id}">
+        <div class="cmp-fixture">
+          <div class="cmp-team home">${m.home} ${flagImg(m.home, 'flag')}</div>
+          <div>
+            ${hasResult && (finished || live)
+              ? `<div class="cmp-score">${m.result.home} – ${m.result.away}</div>`
+              : `<div class="cmp-vs">${timeStr}</div>`}
+          </div>
+          <div class="cmp-team away">${flagImg(m.away, 'flag')} ${m.away}</div>
+        </div>
+        <div class="cmp-subline">${dateStr} · ${phase} ${resultBadge}</div>
+        ${myPickHtml}
+        ${winnersHtml}
+      </div>`;
+    }).join('');
+
+    html += `<div class="cmp-group open" id="cmpg-${phaseId}">
+      <button class="cmp-group-head" onclick="toggleCmpGroup('${phaseId}')">
+        <i class="ti ti-layout-list cmp-group-icon"></i>
+        <span class="cmp-group-title">${phase}</span>
+        <span class="cmp-group-count">${phaseMatches.length}</span>
+        <i class="ti ti-chevron-down cmp-chev"></i>
+      </button>
+      <div class="cmp-group-wrap">
+        <div class="cmp-group-body">${matchCards}</div>
+      </div>
+    </div>`;
+  });
+
+  container.innerHTML = html;
+}
+
 // ─── Render: Tabla ───────────────────────────────────────────────────────────
 // Ranking compacto (medallas + puntos). Reutilizable.
 function rankingHtml() {
