@@ -412,11 +412,27 @@ function calcPoints(userId, match, { includeLive = false } = {}) {
   if (ph === rh && pa === ra) return state.points.exact;
 
   // Ganador correcto: 2 pts base
-  let rRes = rh > ra ? 'H' : rh < ra ? 'A' : 'D';
-  // Empate definido por penales: el ganador de penales es el ganador efectivo
-  if (rRes === 'D') rRes = penWinner(match.result) || 'D';
+  // En partidos con penales: el resultado "oficial" es empate (D) porque el marcador
+  // reglamentario fue empate; el ganador efectivo solo se usa para comparar quién
+  // predijo el lado correcto (penales) vs quien predijo empate.
+  const rawRes = rh > ra ? 'H' : rh < ra ? 'A' : 'D';
+  const pen = penWinner(match.result); // 'H' | 'A' | null
+
+  // El resultado efectivo para calcular ganador:
+  // - Si hay penales: quien predijo empate también acertó (marcador reglamentario fue D),
+  //   y quien predijo al ganador de penales también acertó.
+  // - Sin penales: solo quien predijo el resultado real.
+  const rRes = pen ? pen : rawRes; // 'H', 'A', o 'D'
   const pRes = ph > pa ? 'H' : ph < pa ? 'A' : 'D';
-  let pts = rRes === pRes ? state.points.result : 0;
+
+  // Con penales: tanto pRes==='D' (predijo empate, acertó marcador real)
+  // como pRes===pen (predijo directamente al ganador en penales) dan puntos de ganador.
+  let pts = 0;
+  if (pen) {
+    if (pRes === 'D' || pRes === pen) pts = state.points.result;
+  } else {
+    if (pRes === rRes) pts = state.points.result;
+  }
 
   // Bonos (solo aplican cuando NO se acertó el marcador exacto)
   // +1 si acertaste la diferencia de goles
@@ -787,6 +803,32 @@ function renderComparar() {
           : `<div class="cmp-winners"><span class="cmp-noone">Nadie acertó</span></div>`
         : '';
 
+      // Badge para puntos en el detalle
+      const badgeFor = pts => pts === state.points.exact ? 'badge-success' : pts > 0 ? 'badge-purple' : 'badge-danger';
+      const meId = me ? me.id : null;
+
+      // Detalle: todas las predicciones de todos los participantes, ordenadas por puntos
+      const detailRows = state.users
+        .map(u => {
+          const pk = state.picks[u.id]?.[m.id];
+          const has = pickSet(pk);
+          const np = has ? normPick(pk) : null;
+          const pts = hasResult && has && (finished || live) ? calcPoints(u.id, m, { includeLive: true }) : null;
+          return { u, has, np, pts };
+        })
+        .sort((a, b) => (b.pts ?? -1) - (a.pts ?? -1))
+        .map(r => {
+          const color = colorFor(r.u.name);
+          const pickStr = r.has ? r.np.home + '–' + r.np.away : '–';
+          const cls = r.pts !== null ? badgeFor(r.pts) : 'badge-gray';
+          return '<div class="cmp-pred' + (r.u.id === meId ? ' me' : '') + '">'
+            + '<span class="cmp-avatar" style="background:' + color + '30;color:' + color + '">' + initials(r.u.name) + '</span>'
+            + '<span class="cmp-pred-name">' + r.u.name.split(' ')[0] + '</span>'
+            + '<span class="cmp-pred-pick">' + pickStr + '</span>'
+            + '<span class="badge ' + cls + ' cmp-pred-badge">' + (r.pts !== null ? '+' + r.pts : '·') + '</span>'
+            + '</div>';
+        }).join('');
+
       const myPickHtml = me && pickSet(myPick)
         ? `<div class="cmp-mine">
             <span class="cmp-mine-label"><i class="ti ti-user"></i> Mi pronóstico</span>
@@ -813,6 +855,10 @@ function renderComparar() {
         <div class="cmp-subline">${dateStr} · ${phase} ${resultBadge}</div>
         ${myPickHtml}
         ${winnersHtml}
+        <button class="cmp-toggle" onclick="toggleCmpCard('${m.id}')">
+          <span class="cmp-toggle-label"></span><i class="ti ti-chevron-down cmp-chev"></i>
+        </button>
+        <div class="cmp-detail-wrap"><div class="cmp-detail">${detailRows}</div></div>
       </div>`;
     }).join('');
 
@@ -1520,8 +1566,13 @@ function getWinnerOf(home, away) {
   const rh = m.result?.home, ra = m.result?.away;
   if (rh === '' || rh == null || ra === '' || ra == null) return null;
   const nh = parseInt(rh), na = parseInt(ra);
-  if (isNaN(nh) || isNaN(na) || nh === na) return null; // draw = wait for pens
-  return nh > na ? m.home : m.away;
+  if (isNaN(nh) || isNaN(na)) return null;
+  if (nh > na) return m.home;
+  if (na > nh) return m.away;
+  // Empate en tiempo reglamentario: desempate por penales
+  const pw = penWinner(m.result);
+  if (!pw) return null; // aún sin resultado de penales
+  return pw === 'H' ? m.home : m.away;
 }
 
 function resolveBracket() {
