@@ -1601,172 +1601,223 @@ function resolveBracket() {
   return { w32, w16, wQF, wSF, sfLosers, champion };
 }
 
-// ── Flag-only compact bracket ──
-function brFlag(team, isWinner, size) {
-  const c = team ? TEAM_FLAGS[team] : null;
-  // flagcdn.com only supports specific widths: 20, 40, 80, 160, 320...
-  if (c) {
-    return `<img src="https://flagcdn.com/w40/${c}.png" alt="${team}" title="${team}" loading="lazy"
-      class="brf${isWinner ? ' brf-win' : ''}">`;
-  }
-  return `<span class="brf brf-tbd"><i class="ti ti-star-filled"></i></span>`;
+// ── Bracket radial futurista ──
+// Orden angular de los 16 partidos de 16avos alrededor del círculo,
+// construido para que los pares consecutivos coincidan exactamente
+// con r16Pairs / qfPairs / sfPairs (ver BRACKET_STRUCTURE).
+const BR_CIRCLE_ORDER = [1,4,0,2,3,5,6,7,10,11,8,9,13,15,12,14];
+const BR_RADII = [392, 326, 258, 190, 122];
+const BR_NODE_SIZE = [15, 13.5, 12, 11, 10];
+const BR_SPIN_DUR = 60; // segundos por vuelta completa del circuito
+
+function brAngleAt(level, idx) {
+  if (level === 0) return -90 + idx * (360 / 32);
+  const a1 = brAngleAt(level - 1, idx * 2);
+  const a2 = brAngleAt(level - 1, idx * 2 + 1);
+  return (a1 + a2) / 2;
+}
+function brPos(level, idx) {
+  const a = brAngleAt(level, idx) * Math.PI / 180;
+  const r = BR_RADII[level];
+  return { x: r * Math.cos(a), y: r * Math.sin(a) };
 }
 
-function brMatch(homeTeam, awayTeam, winner, isVertical) {
-  const hW = winner && winner === homeTeam;
-  const aW = winner && winner === awayTeam;
-  return `<div class="brm${isVertical ? ' brm-v' : ''}">
-    <div class="brm-team${hW ? ' brm-w' : ''}">${brFlag(homeTeam, hW, 28)}</div>
-    <div class="brm-team${aW ? ' brm-w' : ''}">${brFlag(awayTeam, aW, 28)}</div>
-  </div>`;
+let brClipSeq = 0;
+// Solo dibuja un nodo cuando ya se conoce el equipo — nada de círculos
+// grises de "por definir" en los niveles todavía sin resolver.
+function brRadialFlag(team, x, y, r, out) {
+  if (!team) return '';
+  const gx = x.toFixed(1), gy = y.toFixed(1);
+  const code = TEAM_FLAGS[team];
+  if (!code) {
+    return `<g transform="translate(${gx},${gy})" class="brw-node">
+      <g class="brw-node-hover">
+        <circle r="${r}" class="brw-node-ring"/>
+        <text class="brw-node-q" x="0" y="1" text-anchor="middle" dominant-baseline="central">?</text>
+      </g>
+      <title>${team}</title>
+    </g>`;
+  }
+  brClipSeq++;
+  const cid = 'brwclip' + brClipSeq;
+  const d = r * 2 - 2.4;
+  return `<g transform="translate(${gx},${gy})" class="brw-node${out ? ' brw-node-out' : ''}">
+    <g class="brw-node-spin">
+      <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="-360 0 0" dur="${BR_SPIN_DUR}s" repeatCount="indefinite"/>
+      <g class="brw-node-hover">
+        <clipPath id="${cid}"><circle r="${(r - 1.2).toFixed(1)}"/></clipPath>
+        <circle r="${r}" class="brw-node-ring${out ? ' brw-node-ring-out' : ''}"/>
+        <image href="https://flagcdn.com/w80/${code}.png" x="${(-d / 2).toFixed(1)}" y="${(-d * 0.72 / 2).toFixed(1)}"
+          width="${d.toFixed(1)}" height="${(d * 0.72).toFixed(1)}" clip-path="url(#${cid})"
+          preserveAspectRatio="xMidYMid slice" class="brw-flagimg"/>
+      </g>
+    </g>
+    <title>${team}</title>
+  </g>`;
+}
+
+// Secuencia de luz por tramo (7s en total, siempre de afuera hacia adentro):
+//  0-2s  → se dibuja de afuera hacia adentro, de tenue a brillante
+//  2-5s  → línea completa encendida y parpadeando
+//  5-7s  → se apaga de afuera hacia adentro, de brillante a tenue
+const BR_EDGE_CYCLE = 7;
+const BR_DASH_KT = "0;0.28571;0.71429;1";
+const BR_OPACITY_KT = "0;0.28571;0.33929;0.39286;0.44643;0.5;0.55357;0.60714;0.66071;0.71429;1";
+const BR_OPACITY_VALS = "0.15;1;0.55;1;0.55;1;0.55;1;0.55;1;0.15";
+
+function brRadialEdge(x1, y1, x2, y2, alive, delay) {
+  const a = [x1.toFixed(1), y1.toFixed(1), x2.toFixed(1), y2.toFixed(1)];
+  if (alive) {
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    const lenF = len.toFixed(1);
+    const beginAt = (delay || 0).toFixed(2);
+    const dashVals = `${lenF};0;0;${(-len).toFixed(1)}`;
+    const dashAnim = `<animate attributeName="stroke-dashoffset" values="${dashVals}" keyTimes="${BR_DASH_KT}" dur="${BR_EDGE_CYCLE}s" begin="${beginAt}s" repeatCount="indefinite" calcMode="linear"/>`;
+    const opacityAnim = `<animate attributeName="opacity" values="${BR_OPACITY_VALS}" keyTimes="${BR_OPACITY_KT}" dur="${BR_EDGE_CYCLE}s" begin="${beginAt}s" repeatCount="indefinite" calcMode="linear"/>`;
+    return `<g>
+      ${opacityAnim}
+      <line x1="${a[0]}" y1="${a[1]}" x2="${a[2]}" y2="${a[3]}" class="brw-edge-glow" stroke-dasharray="${lenF} ${lenF}" stroke-dashoffset="${lenF}">${dashAnim}</line>
+      <line x1="${a[0]}" y1="${a[1]}" x2="${a[2]}" y2="${a[3]}" class="brw-edge-core" stroke-dasharray="${lenF} ${lenF}" stroke-dashoffset="${lenF}">${dashAnim}</line>
+    </g>`;
+  }
+  return `<line x1="${a[0]}" y1="${a[1]}" x2="${a[2]}" y2="${a[3]}" class="brw-edge"/>`;
+}
+
+function buildRadialBracket() {
+  const { w32, w16, wQF, wSF, champion } = resolveBracket();
+  const r32 = BRACKET_STRUCTURE.r32;
+  const order = BR_CIRCLE_ORDER;
+
+  const L0 = [];
+  for (let p = 0; p < 32; p++) {
+    const s = Math.floor(p / 2);
+    const mi = order[s];
+    const isHome = p % 2 === 0;
+    const team = isHome ? r32[mi].home : r32[mi].away;
+    const winner = w32[mi];
+    const { x, y } = brPos(0, p);
+    L0.push({ x, y, team, out: !!(winner && team && winner !== team) });
+  }
+  const L1 = [];
+  for (let s = 0; s < 16; s++) {
+    const mi = order[s];
+    const team = w32[mi];
+    const t = Math.floor(s / 2);
+    const winner = w16[t];
+    const { x, y } = brPos(1, s);
+    L1.push({ x, y, team, out: !!(winner && team && winner !== team) });
+  }
+  const L2 = [];
+  for (let t = 0; t < 8; t++) {
+    const team = w16[t];
+    const q = Math.floor(t / 2);
+    const winner = wQF[q];
+    const { x, y } = brPos(2, t);
+    L2.push({ x, y, team, out: !!(winner && team && winner !== team) });
+  }
+  const L3 = [];
+  for (let q = 0; q < 4; q++) {
+    const team = wQF[q];
+    const f = Math.floor(q / 2);
+    const winner = wSF[f];
+    const { x, y } = brPos(3, q);
+    L3.push({ x, y, team, out: !!(winner && team && winner !== team) });
+  }
+  const L4 = [];
+  for (let f = 0; f < 2; f++) {
+    const team = wSF[f];
+    const { x, y } = brPos(4, f);
+    L4.push({ x, y, team, out: !!(champion && team && champion !== team) });
+  }
+
+  const edges = [];
+  function link(childArr, parentArr, level) {
+    for (let p = 0; p < parentArr.length; p++) {
+      const c0 = childArr[p * 2], c1 = childArr[p * 2 + 1];
+      const par = parentArr[p];
+      [c0, c1].forEach(c => {
+        edges.push({
+          x1: c.x, y1: c.y, x2: par.x, y2: par.y,
+          alive: !!(c.team && par.team && c.team === par.team),
+          delay: level * 1.0,
+        });
+      });
+    }
+  }
+  link(L0, L1, 0); link(L1, L2, 1); link(L2, L3, 2); link(L3, L4, 3);
+  [L4[0], L4[1]].forEach(c => {
+    edges.push({ x1: c.x, y1: c.y, x2: 0, y2: 0, alive: !!(c.team && champion && c.team === champion), delay: 4 * 1.0 });
+  });
+
+  return { levels: [L0, L1, L2, L3, L4], edges, champion };
+}
+
+// Trofeo oficial (imagen provista por el usuario, recortada al trofeo).
+// El centro nunca gira: es el eje fijo alrededor del cual gira el circuito.
+function brTrophyIcon() {
+  return `<clipPath id="brwTrophyClip"><rect x="-24" y="-38" width="48" height="76" rx="6"/></clipPath>
+  <image href="trophy-fifa26.png" x="-24" y="-38" width="48" height="76" clip-path="url(#brwTrophyClip)" preserveAspectRatio="xMidYMid slice"/>`;
 }
 
 function renderBracket() {
   const el = document.getElementById('tab-bracket');
   if (!el || el.classList.contains('hidden')) return;
 
-  const { w32, w16, wQF, wSF, sfLosers, champion } = resolveBracket();
-  const r32 = BRACKET_STRUCTURE.r32;
-  const r16p = BRACKET_STRUCTURE.r16Pairs;
-  const qfp  = BRACKET_STRUCTURE.qfPairs;
-  const sfp  = BRACKET_STRUCTURE.sfPairs;
+  const { levels, edges, champion } = buildRadialBracket();
 
-  // Build team pairs for each round
-  const r16t = r16p.map(([a,b]) => ({ home: w32[a], away: w32[b] }));
-  const qft  = qfp.map(([a,b])  => ({ home: w16[a], away: w16[b] }));
-  const sft  = sfp.map(([a,b])  => ({ home: wQF[a], away: wQF[b] }));
+  let nodesSvg = '';
+  levels.forEach((arr, lvl) => {
+    arr.forEach(n => { nodesSvg += brRadialFlag(n.team, n.x, n.y, BR_NODE_SIZE[lvl], n.out); });
+  });
 
-  // Left side: indices 0-3 from each round
-  // Layout: 8 r32 → 4 r16 → 2 qf → 1 sf → center
-  function col(items) {
-    return `<div class="brcol">${items.join('')}</div>`;
-  }
-  function spacer() { return '<div class="brspc"></div>'; }
+  let edgesSvg = '';
+  edges.forEach(e => { edgesSvg += brRadialEdge(e.x1, e.y1, e.x2, e.y2, e.alive, e.delay); });
 
-  // Champion flag
-  const champC = champion ? TEAM_FLAGS[champion] : null;
-  const champFlag = champC
-    ? `<img src="https://flagcdn.com/w80/${champC}.png" alt="${champion}" title="${champion}" class="br-champ-flag">`
-    : `<span class="br-champ-tbd"><i class="ti ti-trophy"></i></span>`;
+  const spokes = Array.from({ length: 16 }, (_, i) => {
+    const a = (-90 + i * (360 / 16)) * Math.PI / 180;
+    const x2 = (392 * Math.cos(a)).toFixed(1), y2 = (392 * Math.sin(a)).toFixed(1);
+    return `<line x1="0" y1="0" x2="${x2}" y2="${y2}" class="brw-spoke"/>`;
+  }).join('');
 
-  // 3rd place
-  const tp1 = sfLosers[0], tp2 = sfLosers[1];
-  const tpW = (tp1 && tp2) ? getWinnerOf(tp1, tp2) : null;
-
-  // Build columns — left side (r32 idx 0-7, r16 idx 0-3, qf idx 0-1, sf idx 0)
-  const leftR32 = [
-    brMatch(r32[1].home, r32[1].away, w32[1]),
-    brMatch(r32[4].home, r32[4].away, w32[4]),
-    spacer(),
-    brMatch(r32[0].home, r32[0].away, w32[0]),
-    brMatch(r32[2].home, r32[2].away, w32[2]),
-    spacer(),
-    brMatch(r32[3].home, r32[3].away, w32[3]),
-    brMatch(r32[5].home, r32[5].away, w32[5]),
-    spacer(),
-    brMatch(r32[6].home, r32[6].away, w32[6]),
-    brMatch(r32[7].home, r32[7].away, w32[7]),
-  ];
-  const leftR16 = [
-    brMatch(r16t[0].home, r16t[0].away, w16[0]),
-    spacer(), spacer(),
-    brMatch(r16t[1].home, r16t[1].away, w16[1]),
-    spacer(), spacer(),
-    brMatch(r16t[2].home, r16t[2].away, w16[2]),
-    spacer(), spacer(),
-    brMatch(r16t[3].home, r16t[3].away, w16[3]),
-  ];
-  const leftQF = [
-    spacer(),
-    brMatch(qft[0].home, qft[0].away, wQF[0]),
-    spacer(), spacer(), spacer(),
-    brMatch(qft[1].home, qft[1].away, wQF[1]),
-    spacer(),
-  ];
-  const leftSF = [
-    spacer(), spacer(),
-    brMatch(sft[0].home, sft[0].away, wSF[0]),
-    spacer(), spacer(),
-  ];
-
-  // Right side (mirrored)
-  const rightR32 = [
-    brMatch(r32[10].home, r32[10].away, w32[10]),
-    brMatch(r32[11].home, r32[11].away, w32[11]),
-    spacer(),
-    brMatch(r32[8].home,  r32[8].away,  w32[8]),
-    brMatch(r32[9].home,  r32[9].away,  w32[9]),
-    spacer(),
-    brMatch(r32[13].home, r32[13].away, w32[13]),
-    brMatch(r32[15].home, r32[15].away, w32[15]),
-    spacer(),
-    brMatch(r32[12].home, r32[12].away, w32[12]),
-    brMatch(r32[14].home, r32[14].away, w32[14]),
-  ];
-  const rightR16 = [
-    brMatch(r16t[4].home, r16t[4].away, w16[4]),
-    spacer(), spacer(),
-    brMatch(r16t[5].home, r16t[5].away, w16[5]),
-    spacer(), spacer(),
-    brMatch(r16t[6].home, r16t[6].away, w16[6]),
-    spacer(), spacer(),
-    brMatch(r16t[7].home, r16t[7].away, w16[7]),
-  ];
-  const rightQF = [
-    spacer(),
-    brMatch(qft[2].home, qft[2].away, wQF[2]),
-    spacer(), spacer(), spacer(),
-    brMatch(qft[3].home, qft[3].away, wQF[3]),
-    spacer(),
-  ];
-  const rightSF = [
-    spacer(), spacer(),
-    brMatch(sft[1].home, sft[1].away, wSF[1]),
-    spacer(), spacer(),
-  ];
+  const champCode = champion ? TEAM_FLAGS[champion] : null;
+  const champCenter = champCode
+    ? `<clipPath id="brwChampClip"><circle r="30" cx="0" cy="-2"/></clipPath>
+       <image href="https://flagcdn.com/w80/${champCode}.png" x="-30" y="-30" width="60" height="43.2" clip-path="url(#brwChampClip)" preserveAspectRatio="xMidYMid slice"/>`
+    : brTrophyIcon();
 
   el.innerHTML = `
   <div class="brwrap">
     <div class="brtitle"><i class="ti ti-trophy"></i> Bracket Mundial 2026</div>
-    <div class="brscroll">
-      <div class="brgrid">
-        <div class="brhdr">16avos</div>
-        <div class="brhdr">8vos</div>
-        <div class="brhdr">Cuartos</div>
-        <div class="brhdr">Semi</div>
-        <div class="brhdr"></div>
-        <div class="brhdr">Semi</div>
-        <div class="brhdr">Cuartos</div>
-        <div class="brhdr">8vos</div>
-        <div class="brhdr">16avos</div>
-
-        ${col(leftR32)}
-        ${col(leftR16)}
-        ${col(leftQF)}
-        ${col(leftSF)}
-
-        <div class="brcenter">
-          <div class="br-champion">
-            ${champFlag}
-            <div class="br-champ-label">🏆 Campeón</div>
-            <div class="br-champ-name">${champion || '?'}</div>
-          </div>
-          <div class="br-third-wrap">
-            <div class="br-third-label">🥉 3er lugar</div>
-            <div class="br-third-flags">
-              ${brFlag(tp1, tpW===tp1, 32)}
-              <span class="br-third-vs">vs</span>
-              ${brFlag(tp2, tpW===tp2, 32)}
-            </div>
-          </div>
-        </div>
-
-        ${col(rightSF)}
-        ${col(rightQF)}
-        ${col(rightR16)}
-        ${col(rightR32)}
-      </div>
+    <div class="brw-stage">
+      <svg viewBox="-430 -430 860 860" class="brw-svg" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <radialGradient id="brwCenterGlow" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="72">
+            <animate attributeName="fx" values="-28;24;18;-30;-28" dur="7s" repeatCount="indefinite"/>
+            <animate attributeName="fy" values="-22;12;28;-14;-22" dur="7s" repeatCount="indefinite"/>
+            <stop offset="0%" stop-color="#fff6da" stop-opacity=".95"/>
+            <stop offset="45%" stop-color="#ffcf4d" stop-opacity=".5"/>
+            <stop offset="100%" stop-color="#ffcf4d" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <circle r="392" class="brw-ring"/>
+        <circle r="326" class="brw-ring"/>
+        <circle r="258" class="brw-ring"/>
+        <circle r="190" class="brw-ring"/>
+        <circle r="122" class="brw-ring"/>
+        ${spokes}
+        <g class="brw-rotor">
+          <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="${BR_SPIN_DUR}s" repeatCount="indefinite"/>
+          ${edgesSvg}
+          ${nodesSvg}
+        </g>
+        <g class="brw-center">
+          <circle r="72" class="brw-center-glow" fill="url(#brwCenterGlow)"/>
+          <circle r="40" class="brw-center-disc"/>
+          ${champCenter}
+        </g>
+      </svg>
     </div>
+    ${champion ? `<div class="brw-champ-caption"><i class="ti ti-trophy"></i> Campeón: <strong>${champion}</strong></div>` : ''}
     <p class="br-note"><i class="ti ti-info-circle"></i> Se actualiza automáticamente con los resultados oficiales.</p>
   </div>`;
 }
